@@ -1,2 +1,2 @@
-# BoardGameMultiplayer
-BoardGameMultiplayer
+# BoardGame
+BoardGame
