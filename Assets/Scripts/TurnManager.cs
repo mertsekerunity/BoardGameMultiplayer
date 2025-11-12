@@ -417,7 +417,7 @@ public class TurnManager : MonoBehaviour
         UIManager.Instance.SetUndoButtonInteractable(false);
     }
 
-    private void SubmitBid(int amount)
+    public void SubmitBid(int amount)
     {
         // amount can be positive (pay) or negative (receive), per your board
         int pid = _biddingCurrentPid;
@@ -1414,7 +1414,23 @@ public class TurnManager : MonoBehaviour
     public void UnblockCharacter(int characterNumber) => _blockedCharacters.Remove(characterNumber);
     public void MarkStolenThisRound(int characterNumber) => _stolenCharacters.Add(characterNumber);
 
+    public void SubmitBid_Server(int pid, int amount)
+    {
+        // Validate it's currently that pid's bidding turn
+        if (pid != _biddingCurrentPid) return;
 
+        // (Optionally) validate funds server-side if amount > 0
+        var p = PlayerManager.Instance.players.First(pp => pp.id == pid);
+        if (amount > 0 && p.money < amount) { UIManager.Instance.ShowMessage("Not enough money."); return; }
+
+        // Reuse your current submit logic (set _playerBids, add/remove money, flip _biddingWaiting)
+        // You can move the body of your old SubmitBid(int amount) here, or call into it if you refactor:
+        _playerBids[pid] = amount;
+        if (amount > 0) PlayerManager.Instance.RemoveMoney(pid, amount);
+        else if (amount < 0) PlayerManager.Instance.AddMoney(pid, -amount);
+
+        _biddingWaiting = false;
+    }
 
     public void CleanupRound()
     {

@@ -128,13 +128,7 @@ public class PlayerPanel : MonoBehaviour
 
         abilityButton.onClick.AddListener(() =>
         {
-            if (playerId != TurnManager.Instance.ActivePlayerId)
-            {
-                UIManager.Instance.ShowMessage("Not your turn.");
-                return;
-            }
-            bool ok = TurnManager.Instance.TryUseAbility();
-            if (!ok) UIManager.Instance.ShowMessage("Ability not available.");
+            UIManager.Instance.OnUseAbilityClicked();
         });
     }
 

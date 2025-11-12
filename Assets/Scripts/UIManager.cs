@@ -273,36 +273,55 @@ public class UIManager : MonoBehaviour
 
     public void OnBuyStock(StockType stock)
     {
-        var pid = TurnManager.Instance.ActivePlayerId;
-        if (pid < 0) 
+        // single-player fallback (when not connected)
+        if (!Mirror.NetworkClient.isConnected)
         {
-            ShowMessage("No active player.");
+            var pid = TurnManager.Instance.ActivePlayerId;
+            if (pid < 0) { ShowMessage("No active player."); return; }
+            bool ok = TurnManager.Instance.TryBuyOne(stock);
+            if (!ok) ShowMessage("Can't buy (limit/funds/phase).");
             return;
         }
-        //PlayerManager.Instance.TryBuyStock(pid, stock); //no buy limit!
 
-        bool ok = TurnManager.Instance.TryBuyOne(stock);
-        if (!ok) ShowMessage("Can't buy (limit reached / funds / wrong phase).");
+        // networked path
+        var lp = LocalNetPlayer;
+        if (lp == null) { ShowMessage("No local network player."); return; }
+        lp.CmdBuy(stock);
     }
 
     public void OnSellStock(int playerId, StockType stock, bool openSale)
     {
-        if (playerId != TurnManager.Instance.ActivePlayerId)
+        if (!Mirror.NetworkClient.isConnected)
+        {
+            if (playerId != TurnManager.Instance.ActivePlayerId) { ShowMessage("Not your turn."); return; }
+            bool ok = TurnManager.Instance.TrySellOne(stock, openSale);
+            if (!ok) ShowMessage("Can't sell (limit/stock/phase).");
+            return;
+        }
+
+        var lp = LocalNetPlayer;
+        if (lp == null) { ShowMessage("No local network player."); return; }
+        lp.CmdSell(stock, openSale);
+    }
+
+    public void OnUseAbilityClicked()
+    {
+        if (_localPlayerId != TurnManager.Instance.ActivePlayerId)
         {
             ShowMessage("Not your turn.");
             return;
         }
 
-        //PlayerManager.Instance.TrySellStock(playerId, stock, openSale); no sell limit!
+        if (!Mirror.NetworkClient.isConnected)
+        {
+            bool ok = TurnManager.Instance.TryUseAbility();
+            if (!ok) ShowMessage("Ability already used / not your turn.");
+            return;
+        }
 
-        bool ok = TurnManager.Instance.TrySellOne(stock, openSale);
-        if (!ok) ShowMessage("Can't sell (limit reached / no stock / wrong phase).");
-    }
-
-    private void OnUseAbilityClicked()
-    {
-        bool ok = TurnManager.Instance.TryUseAbility();
-        if (!ok) ShowMessage("Ability already used / not your turn.");
+        var lp = LocalNetPlayer;
+        if (lp == null) { ShowMessage("No local network player."); return; }
+        lp.CmdUseAbility();
     }
 
     public void SetAbilityButtonState(bool enabled)
@@ -364,8 +383,26 @@ public class UIManager : MonoBehaviour
         lotteryText.text = $"{amount}$";
     }
 
-    public void OnUndo() => TurnManager.Instance.UndoLast();
-    public void OnEndTurn() => TurnManager.Instance.EndActivePlayerTurn();
+    public void OnUndo()
+    {
+        if (!Mirror.NetworkClient.isConnected)
+        {
+            TurnManager.Instance.UndoLast();
+            return;
+        }
+
+        LocalNetPlayer?.CmdUndo();
+    }
+    public void OnEndTurn()
+    {
+        if (!Mirror.NetworkClient.isConnected)
+        {
+            TurnManager.Instance.EndActivePlayerTurn();
+            return;
+        }
+
+        LocalNetPlayer?.CmdEndTurn();
+    }
 
     // Show character card and player name when turn starts
     public void ShowCharacter(CharacterCardSO card, int playerId)
@@ -384,6 +421,11 @@ public class UIManager : MonoBehaviour
     public void ShowMessage(string message)
     {
         // TODO: Implement popup or log
+        Debug.Log("[MSG] " + message);
+        // Optional: if you have a small TMP text for toast:
+        // globalPrompt.gameObject.SetActive(true);
+        // globalPrompt.text = message;
+        // StartCoroutine(HideAfter(2f));
     }
 
     // Called whenever a player’s money changes
@@ -411,7 +453,21 @@ public class UIManager : MonoBehaviour
     public void Bidding_BeginTurn(string playerName, int playerMoney, Action<int> onBid)
     {
         if (!biddingPanel) return;
-        biddingPanel.BeginTurn(playerName, playerMoney, onBid);
+
+        // Instead of giving BiddingPanel a TurnManager callback, give it a UI callback that routes to server.
+        biddingPanel.BeginTurn(playerName, playerMoney, (amount) =>
+        {
+            if (!Mirror.NetworkClient.isConnected)
+            {
+                TurnManager.Instance.SubmitBid(amount);
+            }
+            else
+            {
+                var lp = LocalNetPlayer;
+                if (lp == null) { ShowMessage("No local network player."); return; }
+                lp.CmdSubmitBid(amount);
+            }
+        });
     }
 
     public void Bidding_Close()
@@ -722,6 +778,47 @@ public class UIManager : MonoBehaviour
         string text = $"{stock} stock hit ceiling";
         ShowPrompt(text);
     }
+
+    public void SetLocalPlayerId(int pid)
+    {
+        _localPlayerId = pid;
+
+        // retag panels so only your seat is interactive on your turn
+        foreach (var kv in _playerPanels)
+        {
+            bool isLocal = (kv.Key == _localPlayerId);
+            //kv.Value.SetIsLocal?.Invoke(isLocal); // if you added this; otherwise skip
+
+            if (!isLocal)
+            {
+                kv.Value.SetSellButtonsInteractable(false);
+                kv.Value.SetAbilityButtonInteractable(false);
+                kv.Value.SetEndTurnButtonInteractable(false);
+            }
+        }
+
+        // if a turn is already active, recompute interactivity
+        if (_activePlayerId >= 0)
+        {
+            SetActivePlayer(_activePlayerId, enable: true);
+        }
+
+        // refresh local panel snapshot
+        if (_playerPanels.TryGetValue(_localPlayerId, out var panel))
+        {
+            var p = PlayerManager.Instance.players.First(pp => pp.id == _localPlayerId);
+            if(p != null)
+            {
+                panel.UpdateMoney(p.money);
+                panel.UpdateStocks(p.stocks);
+            }
+        }
+
+        ShowMessage($"You are Player {pid + 1}.");
+    }
+
+    private NetPlayer LocalNetPlayer =>
+        Mirror.NetworkClient.isConnected ? Mirror.NetworkClient.localPlayer?.GetComponent<NetPlayer>() : null;
 
     private void ShowManipulationCard(ManipulationType card)
     {
