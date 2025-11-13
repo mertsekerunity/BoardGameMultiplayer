@@ -7,6 +7,20 @@ public class CustomNetworkManager : NetworkManager
     private int nextPid = 0;
     private readonly Dictionary<NetworkConnectionToClient, NetPlayer> connToPlayer = new();
 
+    public override void OnStartServer()
+    {
+        base.OnStartServer();
+        nextPid = 0;
+        connToPlayer.Clear();
+    }
+
+    public override void OnStopServer()
+    {
+        base.OnStopServer();
+        nextPid = 0;
+        connToPlayer.Clear();
+    }
+
     public override void OnServerAddPlayer(NetworkConnectionToClient conn)
     {
         // Spawn the player prefab (base does this) and grab our NetPlayer
@@ -31,11 +45,15 @@ public class CustomNetworkManager : NetworkManager
         base.OnServerDisconnect(conn);
     }
 
-    // Optional: expose a helper to get the active NetPlayer for a given pid
     public NetPlayer GetPlayerByPid(int pid)
     {
         foreach (var kv in connToPlayer)
             if (kv.Value.pid == pid) return kv.Value;
         return null;
+    }
+
+    public IReadOnlyCollection<NetPlayer> GetAllPlayers()
+    {
+        return connToPlayer.Values;
     }
 }

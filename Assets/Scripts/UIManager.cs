@@ -64,11 +64,11 @@ public class UIManager : MonoBehaviour
     private Dictionary<int, PlayerPanel> _playerPanels = new Dictionary<int, PlayerPanel>();
     private Dictionary<StockType, MarketRow> _marketRows = new Dictionary<StockType, MarketRow>();
 
-    // You’ll need a way to know which ID is “you”:
-    private int _localPlayerId = 0; // for now, default to 0; your join logic will set this
+    private int _localPlayerId = -1;
     private int _activePlayerId = -1;
 
     public int LocalPlayerId => _localPlayerId;  // read-only accessor
+    public bool HasLocalPlayer => _localPlayerId >= 0;
 
     void Awake()
     {
@@ -166,9 +166,10 @@ public class UIManager : MonoBehaviour
 
     public void CreatePlayerPanels()
     {
-        // clear any old panels if you rerun in editor
         foreach (Transform child in playersPanelContainer)
+        {
             Destroy(child.gameObject);
+        }
         _playerPanels.Clear();
 
         var players = PlayerManager.Instance.players;
@@ -184,16 +185,24 @@ public class UIManager : MonoBehaviour
             playersPanelContainer.GetComponent<GridLayoutGroup>().constraint = GridLayoutGroup.Constraint.FixedRowCount;
         }
 
-            for (int i = 0; i < players.Count; i++)
+        for (int i = 0; i < players.Count; i++)
+        {
+            var pData = players[i];
+
+            bool isLocal = HasLocalPlayer && (pData.id == _localPlayerId);
+
+            var panel = Instantiate(playerPanelPrefab, playersPanelContainer);
+
+            panel.Initialize(pData.id, pData.playerName, isLocal);
+            panel.UpdateMoney(pData.money);
+
+            if (isLocal)
             {
-                var pData = players[i];
-                var panel = Instantiate(playerPanelPrefab, playersPanelContainer);
-                panel.Initialize(pData.id, pData.playerName, pData.id == _localPlayerId);
-                panel.UpdateMoney(pData.money);
-                if (pData.id == _localPlayerId)
-                    panel.UpdateStocks(pData.stocks);
-                _playerPanels[pData.id] = panel;
+                panel.UpdateStocks(pData.stocks);
             }
+                
+            _playerPanels[pData.id] = panel;
+        }
     }
 
     public void CreateMarketRows()
@@ -306,21 +315,28 @@ public class UIManager : MonoBehaviour
 
     public void OnUseAbilityClicked()
     {
-        if (_localPlayerId != TurnManager.Instance.ActivePlayerId)
-        {
-            ShowMessage("Not your turn.");
-            return;
-        }
-
         if (!Mirror.NetworkClient.isConnected)
         {
+            // Offline / singleplayer
+            if (_localPlayerId != TurnManager.Instance.ActivePlayerId)
+            {
+                ShowMessage("Not your turn.");
+                return;
+            }
+
             bool ok = TurnManager.Instance.TryUseAbility();
             if (!ok) ShowMessage("Ability already used / not your turn.");
             return;
         }
 
+        // Online: trust the server to validate turn
         var lp = LocalNetPlayer;
-        if (lp == null) { ShowMessage("No local network player."); return; }
+        if (lp == null)
+        {
+            ShowMessage("No local network player.");
+            return;
+        }
+
         lp.CmdUseAbility();
     }
 
@@ -334,32 +350,23 @@ public class UIManager : MonoBehaviour
 
     public void SetActivePlayer(int playerId, bool enable = true)
     {
-        // If disabling, clear current active id; if enabling, set it
         _activePlayerId = enable ? playerId : -1;
 
-        // Only the LOCAL player may interact during THEIR turn
         bool isLocalTurn = enable && (playerId == _localPlayerId);
 
         SetUndoButtonVisible(isLocalTurn);
         SetUndoButtonInteractable(isLocalTurn && TurnManager.Instance.CanUndoCurrentTurn);
 
-        // 1) Market: enable Buy only when it's the local player's turn
         foreach (var row in _marketRows.Values)
+        {
             row.SetBuyInteractable(isLocalTurn);
+        }
 
-        // 2) Player panels:
-        //    - highlight the active player's panel
-        //    - enable SELL + ABILITY only on the LOCAL player's panel during their turn
         foreach (var kv in _playerPanels)
         {
             kv.Value.SetActiveHighlight(kv.Key == playerId);
             int pid = kv.Key;
             var panel = kv.Value;
-
-            // highlight who is active (purely visual)
-            // If enable==true: highlight only the active player; else: turn all off
-            bool isActive = enable && (pid == playerId);
-            //panel.SetActiveHighlight(isActive);
 
             bool isLocalPanel = (pid == _localPlayerId);
             if (isLocalPanel)
@@ -370,7 +377,6 @@ public class UIManager : MonoBehaviour
             }
             else
             {
-                // never allow remote players to interact locally
                 panel.SetSellButtonsInteractable(false);
                 panel.SetAbilityButtonInteractable(false);
                 panel.SetEndTurnButtonInteractable(false);
@@ -786,14 +792,15 @@ public class UIManager : MonoBehaviour
         // retag panels so only your seat is interactive on your turn
         foreach (var kv in _playerPanels)
         {
+            int panelPid = kv.Key;
+            var panel = kv.Value;
             bool isLocal = (kv.Key == _localPlayerId);
-            //kv.Value.SetIsLocal?.Invoke(isLocal); // if you added this; otherwise skip
 
             if (!isLocal)
             {
-                kv.Value.SetSellButtonsInteractable(false);
-                kv.Value.SetAbilityButtonInteractable(false);
-                kv.Value.SetEndTurnButtonInteractable(false);
+                panel.SetSellButtonsInteractable(false);
+                panel.SetAbilityButtonInteractable(false);
+                panel.SetEndTurnButtonInteractable(false);
             }
         }
 
@@ -804,13 +811,13 @@ public class UIManager : MonoBehaviour
         }
 
         // refresh local panel snapshot
-        if (_playerPanels.TryGetValue(_localPlayerId, out var panel))
+        if (_playerPanels.TryGetValue(_localPlayerId, out var localPanel))
         {
             var p = PlayerManager.Instance.players.First(pp => pp.id == _localPlayerId);
             if(p != null)
             {
-                panel.UpdateMoney(p.money);
-                panel.UpdateStocks(p.stocks);
+                localPanel.UpdateMoney(p.money);
+                localPanel.UpdateStocks(p.stocks);
             }
         }
 

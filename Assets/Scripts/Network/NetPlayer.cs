@@ -8,21 +8,23 @@ public class NetPlayer : NetworkBehaviour
     
     public int pid = -1;
 
-    void OnPidChanged(int oldValue, int newValue)
+    public override void OnStartLocalPlayer()
     {
-        if (isLocalPlayer)
-        {
-            // Tell the UI “this seat is mine”
-            UIManager.Instance?.SetLocalPlayerId(newValue);
-        } 
-    }
+        base.OnStartLocalPlayer();
 
-    public override void OnStartClient()
-    {
-        if(isLocalPlayer && pid >= 0)
+        // In case SyncVar already arrived before this is called.
+        if (pid >= 0)
         {
             UIManager.Instance?.SetLocalPlayerId(pid);
         }
+    }
+
+    void OnPidChanged(int oldValue, int newValue)
+    {
+        if (isLocalPlayer && newValue >= 0)
+        {
+            UIManager.Instance?.SetLocalPlayerId(newValue);
+        } 
     }
 
     // ================== Commands (UI -> Server) ==================
