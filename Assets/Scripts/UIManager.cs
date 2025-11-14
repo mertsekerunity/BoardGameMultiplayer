@@ -12,8 +12,6 @@ public class UIManager : MonoBehaviour
 {
     public static UIManager Instance { get; private set; }
 
-    // For single-player testing: allow *any* seat to click Yes
-    [SerializeField] private bool debugSinglePlayer = true;
     [SerializeField] private bool debugShowManipToAll = false;
 
     [SerializeField] private TextMeshProUGUI globalPrompt;
@@ -146,7 +144,6 @@ public class UIManager : MonoBehaviour
 
     private void Update()
     {
-        if (!debugSinglePlayer) return;
         if (Input.GetKeyDown(KeyCode.Space))
         {
             TurnManager.Instance.EndActivePlayerTurn(); // advance
@@ -282,54 +279,28 @@ public class UIManager : MonoBehaviour
 
     public void OnBuyStock(StockType stock)
     {
-        // single-player fallback (when not connected)
-        if (!Mirror.NetworkClient.isConnected)
-        {
-            var pid = TurnManager.Instance.ActivePlayerId;
-            if (pid < 0) { ShowMessage("No active player."); return; }
-            bool ok = TurnManager.Instance.TryBuyOne(stock);
-            if (!ok) ShowMessage("Can't buy (limit/funds/phase).");
-            return;
-        }
-
-        // networked path
         var lp = LocalNetPlayer;
-        if (lp == null) { ShowMessage("No local network player."); return; }
+        if (lp == null) 
+            {   
+                ShowMessage("No local network player.");
+                return; 
+            }
         lp.CmdBuy(stock);
     }
 
     public void OnSellStock(int playerId, StockType stock, bool openSale)
     {
-        if (!Mirror.NetworkClient.isConnected)
+        var lp = LocalNetPlayer;
+        if (lp == null)
         {
-            if (playerId != TurnManager.Instance.ActivePlayerId) { ShowMessage("Not your turn."); return; }
-            bool ok = TurnManager.Instance.TrySellOne(stock, openSale);
-            if (!ok) ShowMessage("Can't sell (limit/stock/phase).");
+            ShowMessage("No local network player.");
             return;
         }
-
-        var lp = LocalNetPlayer;
-        if (lp == null) { ShowMessage("No local network player."); return; }
         lp.CmdSell(stock, openSale);
     }
 
     public void OnUseAbilityClicked()
     {
-        if (!Mirror.NetworkClient.isConnected)
-        {
-            // Offline / singleplayer
-            if (_localPlayerId != TurnManager.Instance.ActivePlayerId)
-            {
-                ShowMessage("Not your turn.");
-                return;
-            }
-
-            bool ok = TurnManager.Instance.TryUseAbility();
-            if (!ok) ShowMessage("Ability already used / not your turn.");
-            return;
-        }
-
-        // Online: trust the server to validate turn
         var lp = LocalNetPlayer;
         if (lp == null)
         {
@@ -355,7 +326,8 @@ public class UIManager : MonoBehaviour
         bool isLocalTurn = enable && (playerId == _localPlayerId);
 
         SetUndoButtonVisible(isLocalTurn);
-        SetUndoButtonInteractable(isLocalTurn && TurnManager.Instance.CanUndoCurrentTurn);
+        //SetUndoButtonInteractable(isLocalTurn && TurnManager.Instance.CanUndoCurrentTurn);
+        SetUndoButtonInteractable(isLocalTurn); // always clickable now
 
         foreach (var row in _marketRows.Values)
         {
@@ -389,24 +361,19 @@ public class UIManager : MonoBehaviour
         lotteryText.text = $"{amount}$";
     }
 
-    public void OnUndo()
+    public void OnUndoButton()
     {
-        if (!Mirror.NetworkClient.isConnected)
+        var lp = LocalNetPlayer;
+        if (lp == null)
         {
-            TurnManager.Instance.UndoLast();
+            ShowMessage("No local network player.");
             return;
         }
-
-        LocalNetPlayer?.CmdUndo();
+        lp.CmdUndo();
     }
+
     public void OnEndTurn()
     {
-        if (!Mirror.NetworkClient.isConnected)
-        {
-            TurnManager.Instance.EndActivePlayerTurn();
-            return;
-        }
-
         LocalNetPlayer?.CmdEndTurn();
     }
 
@@ -456,23 +423,19 @@ public class UIManager : MonoBehaviour
         biddingPanel.ResetForNewBidding(playerCount);
     }
 
-    public void Bidding_BeginTurn(string playerName, int playerMoney, Action<int> onBid)
+    public void Bidding_BeginTurn(string playerName, int playerMoney)
     {
         if (!biddingPanel) return;
 
-        // Instead of giving BiddingPanel a TurnManager callback, give it a UI callback that routes to server.
         biddingPanel.BeginTurn(playerName, playerMoney, (amount) =>
         {
-            if (!Mirror.NetworkClient.isConnected)
+            var lp = LocalNetPlayer;
+            if (lp == null)
             {
-                TurnManager.Instance.SubmitBid(amount);
+                ShowMessage("No local network player.");
+                return;
             }
-            else
-            {
-                var lp = LocalNetPlayer;
-                if (lp == null) { ShowMessage("No local network player."); return; }
-                lp.CmdSubmitBid(amount);
-            }
+            lp.CmdSubmitBid(amount);
         });
     }
 
@@ -557,7 +520,7 @@ public class UIManager : MonoBehaviour
     public void ShowSelectionConfirm(int actingPid, string message, Action onYes, Action onNo)
     {
         // During selection you usually want *only the picker* to confirm.
-        bool allow = debugSinglePlayer || (actingPid == _localPlayerId); // Singleplayer testing
+        bool allow = (actingPid == _localPlayerId);
         //bool allow = (actingPid == _localPlayerId);
         ShowConfirm(allow, message, onYes, onNo, tag: "SELECT");
     }
@@ -565,7 +528,7 @@ public class UIManager : MonoBehaviour
     public void ShowAbilityConfirm(int actingPid, string message, Action onYes, Action onNo)
     {
         // During abilities, only the acting player should confirm.
-        bool allow = debugSinglePlayer || (actingPid == _localPlayerId); // singleplayer testing
+        bool allow = (actingPid == _localPlayerId);
         //bool allow = (actingPid == _localPlayerId);
         ShowConfirm(allow, message, onYes, onNo, tag: "ABILITY");
     }
@@ -606,7 +569,7 @@ public class UIManager : MonoBehaviour
         string promptText,
         Action<ManipulationType, ManipulationType, ManipulationType, ManipulationType> onChosenOrCancelled)
     {
-        bool isLocal = (actingPid == _localPlayerId) || debugSinglePlayer;
+        bool isLocal = (actingPid == _localPlayerId);
         if (!isLocal) return; // only the acting local player sees this
 
         ShowPrompt(promptText); // use global prompt (single label in your layout)
@@ -621,7 +584,7 @@ public class UIManager : MonoBehaviour
         Action<StockType> onChosen,
         Action onCancelled)
     {
-        bool isLocal = (actingPid == _localPlayerId) || debugSinglePlayer;
+        bool isLocal = (actingPid == _localPlayerId);
         if (!isLocal) return;
 
         ShowPrompt(promptText);
@@ -639,12 +602,6 @@ public class UIManager : MonoBehaviour
                 HidePrompt();
                 onCancelled?.Invoke();
             });
-    }
-
-    public void OnUndoButton()
-    {
-        if (TurnManager.Instance.UndoLast())
-            SetUndoButtonInteractable(TurnManager.Instance.CanUndoCurrentTurn);
     }
 
     public void SetUndoButtonInteractable(bool interactable)
@@ -672,7 +629,7 @@ public class UIManager : MonoBehaviour
         }
 
         // Only show clickable items to the picker (or everyone if debug)
-        bool allow = debugSinglePlayer || (pickerPid == _localPlayerId); //singleplayer testing
+        bool allow = (pickerPid == _localPlayerId);
         //bool allow = (pickerPid == _localPlayerId);
 
         foreach (var card in options)

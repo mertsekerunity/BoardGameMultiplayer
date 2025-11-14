@@ -1,11 +1,11 @@
-﻿using System;
+﻿using Mirror;
+using UnityEngine;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
-using static PlayerManager;
 
-public class TurnManager : MonoBehaviour
+public class TurnManager : NetworkBehaviour
 {
     public static TurnManager Instance { get; private set; }
 
@@ -132,6 +132,7 @@ public class TurnManager : MonoBehaviour
         DontDestroyOnLoad(transform.root.gameObject);
     }
 
+    [Server]
     public void SetupTurnOrder()
     {
         //Determine first-round random order or bidding order
@@ -139,6 +140,7 @@ public class TurnManager : MonoBehaviour
         selectionOrder = PlayerManager.Instance.players.Select(p => p.id).OrderBy(_ => UnityEngine.Random.value).ToList(); //LINQ 
     }
 
+    [Server]
     public void StartDiscardPhase()
     {
         Debug.Log("Discard Phase started.");
@@ -165,6 +167,7 @@ public class TurnManager : MonoBehaviour
         UIManager.Instance.ShowFaceUpDiscards(faceUpDiscards);
     }
 
+    [Server]
     public void StartBiddingPhase()
     {
         Debug.Log("Bidding Phase started.");
@@ -180,6 +183,7 @@ public class TurnManager : MonoBehaviour
         _biddingPhaseCo = StartCoroutine(BiddingPhaseLoop());
     }
 
+    [Server]
     private IEnumerator BiddingPhaseLoop()
     {
         foreach (int pid in biddingOrder)
@@ -191,14 +195,15 @@ public class TurnManager : MonoBehaviour
             UIManager.Instance.SetBidActivePlayer(pid);
 
             var p = PlayerManager.Instance.players.First(pp => pp.id == pid);
-            UIManager.Instance.Bidding_BeginTurn(p.playerName, p.money, SubmitBid);
+            UIManager.Instance.Bidding_BeginTurn(p.playerName, p.money);
 
             // Wait until the player clicks a circle (SubmitBid will flip the gate)
             while (_biddingWaiting)
+            {
                 yield return null;
+            }
         }
 
-        Debug.Log("All players made a bid"); // REMOVE LATER !!!
         UIManager.Instance.ClearAllHighlights();
 
         // Compute character selection order: highest bid first; tiebreak random
@@ -215,6 +220,7 @@ public class TurnManager : MonoBehaviour
         Debug.Log("[BIDDING] Final order: " + string.Join(", ", selectionOrder.Select(id => $"P{id}")));
     }
 
+    [Server]
     public void StartCharacterSelectionPhase()
     {
         Debug.Log("Character Selection Phase started.");
@@ -224,6 +230,7 @@ public class TurnManager : MonoBehaviour
         _selectionCo = StartCoroutine(SelectionPhaseLoop());
     }
 
+    [Server]
     private IEnumerator SelectionPhaseLoop()
     {
         // Prepare mapping fresh each round
@@ -270,7 +277,7 @@ public class TurnManager : MonoBehaviour
         SelectionFinished?.Invoke();
     }
 
-
+    [Server]
     public void StartMainPhase()
     {
         Debug.Log("Main Phase started.");
@@ -283,6 +290,7 @@ public class TurnManager : MonoBehaviour
         _mainPhaseCo = StartCoroutine(MainPhaseLoop());       
     }
 
+    [Server]
     private IEnumerator MainPhaseLoop()
     {
         var selectedCards = characterAssignments.Keys.OrderBy(c => c.characterNumber).ToList();
@@ -303,6 +311,7 @@ public class TurnManager : MonoBehaviour
         GameManager.Instance.EndRound();
     }
 
+    [Server]
     private void HandleCharacterTurn(CharacterCardSO card)
     {
         if (!characterAssignments.ContainsKey(card)) return;
@@ -319,11 +328,16 @@ public class TurnManager : MonoBehaviour
         //UIManager.Instance.SetActivePlayer(pid, enable: true);
     }
 
-    // Call at the start of a player's character turn
+    [ClientRpc]
+    private void RpcSetActivePlayer(int pid, bool enable)
+    {
+        UIManager.Instance.SetActivePlayer(pid, enable);
+    }
+
+    [Server]
     public void BeginActivePlayerTurn(int pid, CharacterAbilityType ability)
     {
         ActivePlayerId = pid;
-        Debug.Log($"Active player id is: { ActivePlayerId}"); //REMOVE LATER !!!
         _turnAction = TurnActionType.None;
         _buyLimitThisTurn = DefaultBuyLimit;
         _sellLimitThisTurn = DefaultSellLimit;
@@ -338,13 +352,14 @@ public class TurnManager : MonoBehaviour
         _activeAbility = ability;
         _abilityAvailable = true;
 
-        UIManager.Instance.SetActivePlayer(pid, enable: pid == UIManager.Instance.LocalPlayerId);
-        UIManager.Instance.SetAbilityButtonState(true);   // Enable “Use Ability” button
+        RpcSetActivePlayer(pid, true);
 
+        UIManager.Instance.SetAbilityButtonState(true);
         UIManager.Instance.SetUndoButtonVisible(pid == UIManager.Instance.LocalPlayerId);
         UIManager.Instance.SetUndoButtonInteractable(false);
     }
 
+    [Server]
     public void EndActivePlayerTurn()
     {
         if (ActivePlayerId < 0) return;
@@ -360,14 +375,17 @@ public class TurnManager : MonoBehaviour
         UIManager.Instance.SetUndoButtonInteractable(false);
         UIManager.Instance.SetUndoButtonVisible(false);
 
-        UIManager.Instance.SetActivePlayer(ActivePlayerId, enable: false);
-        UIManager.Instance.ClearAllHighlights(); //optional
+        // Disable interactivity for this player on all clients
+        RpcSetActivePlayer(ActivePlayerId, false);
+        UIManager.Instance.ClearAllHighlights();
+
         ActivePlayerId = -1;
 
         // Release the coroutine to continue to the next character
         _turnWaiting = false;
     }
 
+    [Server]
     public void RoundStartReset()
     {
         UIManager.Instance.OnRoundStartUIReset();
@@ -394,6 +412,7 @@ public class TurnManager : MonoBehaviour
         _cachedSingleManip.Clear();
     }
 
+    [Server]
     private void PushAbilityBarrier(Action undo)
     {
         _abilityAvailable = false;
@@ -417,36 +436,7 @@ public class TurnManager : MonoBehaviour
         UIManager.Instance.SetUndoButtonInteractable(false);
     }
 
-    public void SubmitBid(int amount)
-    {
-        // amount can be positive (pay) or negative (receive), per your board
-        int pid = _biddingCurrentPid;
-        var p = PlayerManager.Instance.players.First(pp => pp.id == pid);
-
-        if (amount > 0 && p.money < amount)
-        {
-            UIManager.Instance.ShowMessage("Not enough money for that bid.");
-            return; // keep waiting
-        }
-
-        _playerBids[pid] = amount;
-
-        if (amount > 0)
-        {
-            PlayerManager.Instance.RemoveMoney(pid, amount);
-            _bidSpendTotal[pid] = (_bidSpendTotal.TryGetValue(pid, out var cur) ? cur : 0) + amount;
-        }
-            
-        else if (amount < 0)
-        {
-            PlayerManager.Instance.AddMoney(pid, -amount);
-            _bidSpendTotal[pid] = (_bidSpendTotal.TryGetValue(pid, out var cur) ? cur : 0) - amount;
-        }
-            
-
-        _biddingWaiting = false;
-    }
-
+    [Server]
     public void RaiseLimitsForThisTurn(int buyLimit, int sellLimit)
     {
         _buyLimitThisTurn = buyLimit;
@@ -454,6 +444,7 @@ public class TurnManager : MonoBehaviour
         UIManager.Instance.ShowMessage($"This turn limits: buy {_buyLimitThisTurn}, sell {_sellLimitThisTurn}");
     }
 
+    [Server]
     private int GetAnchoredBuyPrice(StockType stock)
     {
         if (!_lockedBuyPrice.TryGetValue(stock, out var anchor))
@@ -466,6 +457,7 @@ public class TurnManager : MonoBehaviour
         return payPrice;
     }
 
+    [Server]
     private int GetAnchoredSellPrice(StockType stock)
     {
         if (!_lockedSellPrice.TryGetValue(stock, out var anchor))
@@ -478,7 +470,7 @@ public class TurnManager : MonoBehaviour
         return gainPrice;
     }
 
-
+    [Server]
     public bool TryBuyOne(StockType stock)
     {
         Debug.Log($"[TURN] BUY {_turnAction} used={_buyUsed},{_sellUsed}"); // REMOVE LATER !!!
@@ -518,6 +510,7 @@ public class TurnManager : MonoBehaviour
         return true;
     }
 
+    [Server]
     public bool TrySellOne(StockType stock, bool openSale)
     {
         Debug.Log($"[TURN] SELL {_turnAction} used={_buyUsed},{_sellUsed}");
@@ -580,6 +573,7 @@ public class TurnManager : MonoBehaviour
         return true;
     }
 
+    [Server]
     public bool TryUseAbility()
     {
         if (ActivePlayerId < 0 || !_abilityAvailable) return false;
@@ -1011,7 +1005,7 @@ public class TurnManager : MonoBehaviour
         return true;
     }
 
-    // Reserve any stock that hasn’t been manipulated yet (random choice for now)
+    [Server]
     public bool TryReserveManipulationTarget(out StockType stock)
     {
         var pool = StockMarketManager.Instance.availableStocks
@@ -1029,7 +1023,7 @@ public class TurnManager : MonoBehaviour
         return true;
     }
 
-    // Reserve a specific target (useful later when you add target selection UI)
+    [Server]
     public bool TryReserveSpecificManipulationTarget(StockType stock)
     {
         if (_manipulatedStocksThisRound.Contains(stock)) return false;
@@ -1038,11 +1032,13 @@ public class TurnManager : MonoBehaviour
         return true;
     }
 
+    [Server]
     public void ReleaseManipulationTarget(StockType stock)
     {
         _manipulatedStocksThisRound.Remove(stock);
     }
 
+    [Server]
     public Action QueueManipulation(int playerId, ManipulationType card, StockType stock)
     {
         OnManipulationQueuedUI?.Invoke(playerId, card, stock);
@@ -1061,6 +1057,7 @@ public class TurnManager : MonoBehaviour
         };
     }
 
+    [Server]
     public void ResolvePendingManipulationsEndOfRound()
     {
         if (_pendingManipulations.Count > 0)
@@ -1075,7 +1072,7 @@ public class TurnManager : MonoBehaviour
         // reservations are irrelevant after reveal; will be cleared by RoundStartReset at next round
     }
 
-    // Immediate effect for a single manipulation (used only at reveal)
+    [Server]
     private void ApplyManipulationNow(ManipulationType m, StockType stock)
     {
         switch (m)
@@ -1098,12 +1095,14 @@ public class TurnManager : MonoBehaviour
         }
     }
 
+    [Server]
     public int? GetPlayerWithCharacterNumber(int charNum)
     {
         var kv = characterAssignments.FirstOrDefault(x => (int)x.Key.characterNumber == charNum);
         return characterAssignments.ContainsKey(kv.Key) ? kv.Value : (int?)null;
     }
 
+    [Server]
     public bool UndoLast()
     {
         if (ActivePlayerId < 0) return false;
@@ -1195,11 +1194,13 @@ public class TurnManager : MonoBehaviour
         return true;
     }
 
+    [Server]
     public void ScheduleThiefPayout(int thiefPid, int victimPid, int amount)
     {
         _pendingThief.Add((thiefPid, victimPid, Mathf.Max(0, amount)));
     }
 
+    [Server]
     public void UnscheduleThiefPayout(int thiefPid, int victimPid, int amount)
     {
         int idx = _pendingThief.FindIndex(t =>
@@ -1207,6 +1208,7 @@ public class TurnManager : MonoBehaviour
         if (idx >= 0) _pendingThief.RemoveAt(idx);
     }
 
+    [Server]
     private void ResolveThiefPayoutsFor(int thiefPid)
     {
         for (int i = _pendingThief.Count - 1; i >= 0; i--)
@@ -1225,15 +1227,18 @@ public class TurnManager : MonoBehaviour
         }
     }
 
+    [Server]
     public void ScheduleTaxCollector(int collectorPid, StockType stock)
     => _pendingTaxes.Add((collectorPid, stock));
 
+    [Server]
     public void UnscheduleTaxCollector(int collectorPid, StockType stock)
     {
         int idx = _pendingTaxes.FindIndex(t => t.collectorPid == collectorPid && t.stock == stock);
         if (idx >= 0) _pendingTaxes.RemoveAt(idx);
     }
 
+    [Server]
     public void ResolveTaxesEndOfRound()
     {
         foreach (var t in _pendingTaxes)
@@ -1257,7 +1262,7 @@ public class TurnManager : MonoBehaviour
         _pendingTaxes.Clear();
     }
 
-    // Map character number -> player id this round (null if not selected, e.g., discarded)
+    [Server]
     public int? GetPidByCharacterNumber(int num)
     {
         foreach (var kv in characterAssignments)
@@ -1266,7 +1271,7 @@ public class TurnManager : MonoBehaviour
         return null;
     }
 
-    // Get the acting player's own character number
+    [Server]
     private int? GetMyCharacterNumber(int pid)
     {
         foreach (var kv in characterAssignments)
@@ -1275,7 +1280,7 @@ public class TurnManager : MonoBehaviour
         return null;
     }
 
-    // Build enabled/disabled sets for a given ability
+    [Server]
     public void BuildTargetsForAbility(int actingPid, CharacterAbilityType ability,
                                    out HashSet<int> enabled, out HashSet<int> disabled)
     {
@@ -1313,7 +1318,7 @@ public class TurnManager : MonoBehaviour
         // If a player picks a number with no owner, the ability just fizzles (intended mystery).
     }
 
-    // Request a UI pick, then run a callback
+    [Server]
     public void RequestCharacterTarget(int actingPid, CharacterAbilityType ability, Action<int> onChosen)
     {
         BuildTargetsForAbility(actingPid, ability, out var enabled, out var disabled);
@@ -1330,6 +1335,7 @@ public class TurnManager : MonoBehaviour
         });
     }
 
+    [Server]
     public bool TryProtectStock(StockType s)
     {
         if (_protectedStocksThisRound.Contains(s)) return false;
@@ -1337,8 +1343,10 @@ public class TurnManager : MonoBehaviour
         _protectedStocksThisRound.Add(s);
         return true;
     }
+    [Server]
     public void UnprotectStock(StockType s) => _protectedStocksThisRound.Remove(s);
 
+    [Server]
     public List<ManipulationType> GetOrCreateManipOptions(int pid)
     {
         if (_cachedManipOptions.TryGetValue(pid, out var list)) return list;
@@ -1352,6 +1360,7 @@ public class TurnManager : MonoBehaviour
         return list;
     }
 
+    [Server]
     public void ConsumeManipOptions(int pid, ManipulationType chosen)
     {
         if (!_cachedManipOptions.TryGetValue(pid, out var list) || list.Count != 3) return;
@@ -1365,6 +1374,7 @@ public class TurnManager : MonoBehaviour
         _cachedManipOptions.Remove(pid);
     }
 
+    [Server]
     public ManipulationType GetOrCreateSingleManip(int pid)
     {
         if (_cachedSingleManip.TryGetValue(pid, out var m)) return m;
@@ -1374,12 +1384,13 @@ public class TurnManager : MonoBehaviour
         return m;
     }
 
+    [Server]
     public void ConsumeSingleManip(int pid)
     {
         _cachedSingleManip.Remove(pid);
     }
 
-
+    [Server]
     public void ResolveEndOfRound()
     {
         // 1) Reveal & apply all queued manipulations (incl. Dividend payouts)
@@ -1406,32 +1417,51 @@ public class TurnManager : MonoBehaviour
         UIManager.Instance.ShowMessage("End of round resolved.");
     }
 
-
+    [Server]
     public void EnableTraderForThisTurn() { _buyDeltaThisTurn = -1; _sellDeltaThisTurn = +1; }
+    [Server]
     public void DisableTraderForThisTurn() { _buyDeltaThisTurn = 0; _sellDeltaThisTurn = 0; }
+    [Server]
     public bool IsCharacterBlocked(int characterNumber) => _blockedCharacters.Contains(characterNumber);
+    [Server]
     public void BlockCharacter(int characterNumber) => _blockedCharacters.Add(characterNumber);
+    [Server]
     public void UnblockCharacter(int characterNumber) => _blockedCharacters.Remove(characterNumber);
+    [Server]
     public void MarkStolenThisRound(int characterNumber) => _stolenCharacters.Add(characterNumber);
 
+    [Server]
     public void SubmitBid_Server(int pid, int amount)
     {
         // Validate it's currently that pid's bidding turn
         if (pid != _biddingCurrentPid) return;
 
-        // (Optionally) validate funds server-side if amount > 0
         var p = PlayerManager.Instance.players.First(pp => pp.id == pid);
-        if (amount > 0 && p.money < amount) { UIManager.Instance.ShowMessage("Not enough money."); return; }
 
-        // Reuse your current submit logic (set _playerBids, add/remove money, flip _biddingWaiting)
-        // You can move the body of your old SubmitBid(int amount) here, or call into it if you refactor:
+        if (amount > 0 && p.money < amount)
+        {
+            // Optional: send a TargetRpc to that player instead of global UI message
+            UIManager.Instance.ShowMessage("Not enough money."); 
+            return; //keep waiting
+        }
+
         _playerBids[pid] = amount;
-        if (amount > 0) PlayerManager.Instance.RemoveMoney(pid, amount);
-        else if (amount < 0) PlayerManager.Instance.AddMoney(pid, -amount);
+
+        if (amount > 0)
+        {
+            PlayerManager.Instance.RemoveMoney(pid, amount);
+            _bidSpendTotal[pid] = (_bidSpendTotal.TryGetValue(pid, out var cur) ? cur : 0) + amount;
+        }
+        else if (amount < 0)
+        {
+            PlayerManager.Instance.AddMoney(pid, -amount);
+            _bidSpendTotal[pid] = (_bidSpendTotal.TryGetValue(pid, out var cur) ? cur : 0) - amount;
+        }
 
         _biddingWaiting = false;
     }
 
+    [Server]
     public void CleanupRound()
     {
         // Reset round state for next round
@@ -1444,6 +1474,7 @@ public class TurnManager : MonoBehaviour
         characterAssignments?.Clear();
     }
 
+    [Server]
     private void Shuffle<T>(List<T> list) // Fisher–Yates shuffle
     {
         for (int i = 0; i < list.Count; i++)
