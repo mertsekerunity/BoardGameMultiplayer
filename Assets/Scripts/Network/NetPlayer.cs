@@ -107,7 +107,13 @@ public class NetPlayer : NetworkBehaviour
     }
 
     [TargetRpc]
-    void TargetToast(string msg)
+    public void TargetBeginBidTurn(string playerName, int playerMoney)
+    {
+        UIManager.Instance.Bidding_BeginTurn(playerName, playerMoney);
+    }
+
+    [TargetRpc]
+    public void TargetToast(string msg)
     {
         UIManager.Instance.ShowMessage(msg);
     }

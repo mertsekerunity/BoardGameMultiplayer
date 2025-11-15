@@ -172,14 +172,16 @@ public class TurnManager : NetworkBehaviour
     {
         Debug.Log("Bidding Phase started.");
 
-        //Begin bidding (skip for round 1)
-
-        // Order players by money ascending and log by using ids to keep lightweight
         biddingOrder = PlayerManager.Instance.players.OrderBy(p => p.money).Select(p => p.id).ToList();
 
-        UIManager.Instance.Bidding_Reset(PlayerManager.Instance.players.Count);
+        // tell all clients to reset their bidding UI
+        RpcBiddingReset(PlayerManager.Instance.players.Count);
 
-        if (_biddingPhaseCo != null) StopCoroutine(_biddingPhaseCo);
+        if (_biddingPhaseCo != null)
+        {
+            StopCoroutine(_biddingPhaseCo);
+        }
+
         _biddingPhaseCo = StartCoroutine(BiddingPhaseLoop());
     }
 
@@ -191,31 +193,42 @@ public class TurnManager : NetworkBehaviour
             _biddingCurrentPid = pid;
             _biddingWaiting = true;
 
-            // highlight whose turn to bid
-            UIManager.Instance.SetBidActivePlayer(pid);
+            // everyone highlights / sees whose turn it is
+            RpcSetBidActivePlayer(pid);
 
+            // find that player's NetPlayer on the *server*
             var p = PlayerManager.Instance.players.First(pp => pp.id == pid);
-            UIManager.Instance.Bidding_BeginTurn(p.playerName, p.money);
+            var nm = NetworkManager.singleton as CustomNetworkManager;
+            var netPlayer = nm?.GetPlayerByPid(pid);
 
-            // Wait until the player clicks a circle (SubmitBid will flip the gate)
-            while (_biddingWaiting)
+            if (netPlayer != null)
             {
-                yield return null;
+                // only that client's UI becomes interactive
+                netPlayer.TargetBeginBidTurn(p.playerName, p.money);
             }
+            else
+            {
+                Debug.LogError($"[BIDDING] No NetPlayer for pid={pid}");
+            }
+
+            // Wait for that player to pick a circle (SubmitBid_Server sets _biddingWaiting=false)
+            while (_biddingWaiting)
+                yield return null;
         }
 
-        UIManager.Instance.ClearAllHighlights();
+        // clear highlights on all clients
+        RpcClearAllHighlights();
 
-        // Compute character selection order: highest bid first; tiebreak random
+        // Compute selection order
         selectionOrder = _playerBids
             .OrderByDescending(kv => kv.Value)
             .ThenBy(_ => UnityEngine.Random.value)
             .Select(kv => kv.Key)
             .ToList();
 
-        // Hide the panel and move on
-        UIManager.Instance.Bidding_Close();
-        BiddingFinished?.Invoke(); // hand control back to GameManager
+        // hide panel on all clients
+        RpcBiddingClose();
+        BiddingFinished?.Invoke();
 
         Debug.Log("[BIDDING] Final order: " + string.Join(", ", selectionOrder.Select(id => $"P{id}")));
     }
@@ -302,7 +315,9 @@ public class TurnManager : NetworkBehaviour
 
             _turnWaiting = true;
             while (_turnWaiting)
+            {
                 yield return null;       // one frame at a time
+            }
         }
 
         ResolveEndOfRound();
@@ -323,15 +338,36 @@ public class TurnManager : NetworkBehaviour
         UIManager.Instance.ShowCharacter(card, pid); 
 
         BeginActivePlayerTurn(pid, card.abilityType);
-
-        // Optionally enable UI for this player’s turn (sell buttons etc.)
-        //UIManager.Instance.SetActivePlayer(pid, enable: true);
     }
 
     [ClientRpc]
     private void RpcSetActivePlayer(int pid, bool enable)
     {
         UIManager.Instance.SetActivePlayer(pid, enable);
+    }
+
+    [ClientRpc]
+    private void RpcBiddingReset(int playerCount)
+    {
+        UIManager.Instance.Bidding_Reset(playerCount);
+    }
+
+    [ClientRpc]
+    private void RpcSetBidActivePlayer(int pid)
+    {
+        UIManager.Instance.SetBidActivePlayer(pid);
+    }
+
+    [ClientRpc]
+    private void RpcBiddingClose()
+    {
+        UIManager.Instance.Bidding_Close();
+    }
+
+    [ClientRpc]
+    private void RpcClearAllHighlights()
+    {
+        UIManager.Instance.ClearAllHighlights();
     }
 
     [Server]
@@ -367,7 +403,7 @@ public class TurnManager : NetworkBehaviour
         var card = PlayerManager.Instance.players[ActivePlayerId].selectedCard;
         UIManager.Instance.HideCharacter(card, ActivePlayerId);
 
-        // if the active character was Thief, pay now (harmless no-op otherwise)
+        // if the active character was Thief, pay now
         ResolveThiefPayoutsFor(ActivePlayerId);
 
         _history.Clear(); // can’t undo previous player’s actions
@@ -377,7 +413,7 @@ public class TurnManager : NetworkBehaviour
 
         // Disable interactivity for this player on all clients
         RpcSetActivePlayer(ActivePlayerId, false);
-        UIManager.Instance.ClearAllHighlights();
+        RpcClearAllHighlights();
 
         ActivePlayerId = -1;
 
@@ -1440,8 +1476,14 @@ public class TurnManager : NetworkBehaviour
 
         if (amount > 0 && p.money < amount)
         {
-            // Optional: send a TargetRpc to that player instead of global UI message
-            UIManager.Instance.ShowMessage("Not enough money."); 
+            // use CustomNetworkManager’s lookup
+            var cnm = NetworkManager.singleton as CustomNetworkManager;
+            var np = cnm?.GetPlayerByPid(pid);
+            if (np != null)
+            {
+                np.TargetToast("Not enough money for that bid.");
+            }
+                
             return; //keep waiting
         }
 

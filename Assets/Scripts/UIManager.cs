@@ -163,6 +163,8 @@ public class UIManager : MonoBehaviour
 
     public void CreatePlayerPanels()
     {
+        Debug.Log($"[UI] CreatePlayerPanels: players={PlayerManager.Instance.players.Count}, local={_localPlayerId}"); // REMOVE LATER
+
         foreach (Transform child in playersPanelContainer)
         {
             Destroy(child.gameObject);
@@ -744,6 +746,7 @@ public class UIManager : MonoBehaviour
 
     public void SetLocalPlayerId(int pid)
     {
+        Debug.Log($"[UI] SetLocalPlayerId -> {pid}"); // REMOVE LATER
         _localPlayerId = pid;
 
         // retag panels so only your seat is interactive on your turn

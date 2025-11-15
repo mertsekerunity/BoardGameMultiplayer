@@ -3752,7 +3752,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c7d911bf61801104e8406be0044a4834, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  debugSinglePlayer: 1
   debugShowManipToAll: 0
   globalPrompt: {fileID: 1005455592}
   playersPanelContainer: {fileID: 1242649519}
@@ -6533,7 +6532,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8e08695e8ab8d2140bdf1fa9a0ab78f3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  playerCount: 6
+  playerCount: 2
   roundText: {fileID: 1543413786}
   winnerText: {fileID: 374334752}
 --- !u!1 &1225723222

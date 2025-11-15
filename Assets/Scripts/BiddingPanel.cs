@@ -46,7 +46,7 @@ public class BiddingPanel : MonoBehaviour
                 opt.button.onClick.RemoveAllListeners();
                 var captured = opt; // capture by value for the lambda
                 opt.button.onClick.AddListener(() => OnOptionClicked(captured));
-                opt.button.interactable = true; // will be refined per-player in BeginTurn
+                opt.button.interactable = false; //
             }
         }
         gameObject.SetActive(true);

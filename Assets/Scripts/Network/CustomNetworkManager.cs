@@ -48,7 +48,13 @@ public class CustomNetworkManager : NetworkManager
     public NetPlayer GetPlayerByPid(int pid)
     {
         foreach (var kv in connToPlayer)
-            if (kv.Value.pid == pid) return kv.Value;
+        {
+            if (kv.Value.pid == pid)
+            {
+                return kv.Value;
+            }
+        }
+            
         return null;
     }
 
