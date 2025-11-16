@@ -76,7 +76,7 @@ public class UIManager : MonoBehaviour
             return;
         }
         Instance = this;
-        DontDestroyOnLoad(transform.root.gameObject);
+        //DontDestroyOnLoad(transform.root.gameObject);
     }
 
     void Start()
@@ -161,9 +161,10 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    public void CreatePlayerPanels()
+    public void CreatePlayerPanels(int[] ids, string[] names, int[] money)
     {
-        Debug.Log($"[UI] CreatePlayerPanels: players={PlayerManager.Instance.players.Count}, local={_localPlayerId}"); // REMOVE LATER
+        int playerCount = ids.Length;
+        Debug.Log($"[UI] CreatePlayerPanels: players={playerCount}, local={_localPlayerId}"); // REMOVE LATER
 
         foreach (Transform child in playersPanelContainer)
         {
@@ -171,9 +172,7 @@ public class UIManager : MonoBehaviour
         }
         _playerPanels.Clear();
 
-        var players = PlayerManager.Instance.players;
-
-        if (players.Count < 5)
+        if (playerCount < 5)
         {
             playersPanelContainer.GetComponent<GridLayoutGroup>().constraintCount = 2;
             playersPanelContainer.GetComponent<GridLayoutGroup>().constraint = GridLayoutGroup.Constraint.FixedColumnCount;
@@ -184,23 +183,33 @@ public class UIManager : MonoBehaviour
             playersPanelContainer.GetComponent<GridLayoutGroup>().constraint = GridLayoutGroup.Constraint.FixedRowCount;
         }
 
-        for (int i = 0; i < players.Count; i++)
+        for (int i = 0; i < playerCount; i++)
         {
-            var pData = players[i];
+            int pid = ids[i];
+            string nm = names[i];
+            int cash = money[i];
 
-            bool isLocal = HasLocalPlayer && (pData.id == _localPlayerId);
+            bool isLocal = HasLocalPlayer && (pid == _localPlayerId);
 
             var panel = Instantiate(playerPanelPrefab, playersPanelContainer);
 
-            panel.Initialize(pData.id, pData.playerName, isLocal);
-            panel.UpdateMoney(pData.money);
+            panel.Initialize(pid, nm, isLocal);
+            panel.UpdateMoney(cash);
 
             if (isLocal)
             {
-                panel.UpdateStocks(pData.stocks);
+                //panel.UpdateStocks(pData.stocks);
+                // Stocks: we’ll hook proper syncing later
+                panel.UpdateStocks(new Dictionary<StockType, int>());
             }
                 
-            _playerPanels[pData.id] = panel;
+            _playerPanels[pid] = panel;
+        }
+
+        // Make sure interactivity respects local id
+        if (_localPlayerId >= 0)
+        {
+            SetLocalPlayerId(_localPlayerId);
         }
     }
 
@@ -783,6 +792,25 @@ public class UIManager : MonoBehaviour
 
         ShowMessage($"You are Player {pid + 1}.");
     }
+
+    public void InitializeGameUI(int[] ids, string[] names, int[] money)
+    {
+        int playerCount = ids.Length;
+        Debug.Log($"[UI] InitializeGameUI players={playerCount}, local={_localPlayerId}");
+
+        CreatePlayerPanels(ids, names, money);   // uses PlayerManager.players
+        CreateMarketRows();     // uses StockMarketManager.availableStocks + stockPrices
+        HideAllUndoButtons();
+    }
+
+
+    public void InitializeLocalPlayerUI(int pid)
+    {
+        Debug.Log($"[UI] InitializeLocalPlayerUI pid={pid}");
+
+        SetLocalPlayerId(pid);
+    }
+
 
     private NetPlayer LocalNetPlayer =>
         Mirror.NetworkClient.isConnected ? Mirror.NetworkClient.localPlayer?.GetComponent<NetPlayer>() : null;

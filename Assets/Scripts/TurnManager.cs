@@ -129,7 +129,7 @@ public class TurnManager : NetworkBehaviour
             return;
         }
         Instance = this;
-        DontDestroyOnLoad(transform.root.gameObject);
+        //DontDestroyOnLoad(transform.root.gameObject);
     }
 
     [Server]

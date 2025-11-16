@@ -33,9 +33,42 @@ public class PlayerManager : MonoBehaviour
             return;
         }
         Instance = this;
-        DontDestroyOnLoad(transform.root.gameObject);
+        //DontDestroyOnLoad(transform.root.gameObject);
     }
 
+    public Player RegisterNetworkPlayer(int pid, string name = null)
+    {
+        // Avoid duplicates if something weird happens
+        var existing = players.FirstOrDefault(p => p.id == pid);
+        if (existing != null)
+            return existing;
+
+        var p = new Player
+        {
+            id = pid,
+            playerName = name ?? $"Player {pid + 1}",
+            money = 5,
+            stocks = new Dictionary<StockType, int>()
+        };
+
+        // Give starting stocks same way as SetupPlayers
+        var available = StockMarketManager.Instance.availableStocks;
+        for (int j = 0; j < 3; j++)
+        {
+            var stock = available[UnityEngine.Random.Range(0, available.Count)];
+            if (!p.stocks.ContainsKey(stock))
+            {
+                p.stocks[stock] = 0;
+            }
+            p.stocks[stock]++;
+        }
+
+        players.Add(p);
+        return p;
+    }
+
+
+    // Single-player helper – not used in multiplayer flow anymore.
     public void SetupPlayers(int playerCount)
     {
         players.Clear();

@@ -56,7 +56,7 @@ public class StockMarketManager : MonoBehaviour
             return;
         }
         Instance = this;
-        DontDestroyOnLoad(transform.root.gameObject);
+        //DontDestroyOnLoad(transform.root.gameObject);
     }
 
     // Initialize market with 3 stocks for <=4 players, else 4 stocks

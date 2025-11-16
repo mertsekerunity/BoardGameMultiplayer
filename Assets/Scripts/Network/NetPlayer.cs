@@ -12,16 +12,14 @@ public class NetPlayer : NetworkBehaviour
     {
         base.OnStartLocalPlayer();
 
-        // In case SyncVar already arrived before this is called.
-        if (pid >= 0)
-        {
-            UIManager.Instance?.SetLocalPlayerId(pid);
-        }
+        //UIManager.Instance?.SetLocalPlayerId(pid);
+        Debug.Log($"[NetPlayer] OnStartLocalPlayer, pid={pid}");
+        //UIManager.Instance.InitializeLocalPlayerUI(pid);
     }
 
     void OnPidChanged(int oldValue, int newValue)
     {
-        if (isLocalPlayer && newValue >= 0)
+        if (isLocalPlayer && newValue >= 0 && UIManager.Instance != null)
         {
             UIManager.Instance?.SetLocalPlayerId(newValue);
         } 

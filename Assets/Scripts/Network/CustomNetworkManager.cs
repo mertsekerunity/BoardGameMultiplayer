@@ -30,7 +30,15 @@ public class CustomNetworkManager : NetworkManager
         np.pid = nextPid++;                    // authoritative pid
         connToPlayer[conn] = np;
 
+        // tell PlayerManager about this player (Server side)
+        PlayerManager.Instance.RegisterNetworkPlayer(np.pid); // ask players to type name while joining
+
         Debug.Log($"[NET] Player joined. pid={np.pid}");
+
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.TryStartGame();
+        }
     }
 
     public override void OnServerDisconnect(NetworkConnectionToClient conn)

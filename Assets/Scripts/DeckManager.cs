@@ -36,7 +36,7 @@ public class DeckManager : MonoBehaviour
             return;
         }
         Instance = this;
-        DontDestroyOnLoad(transform.root.gameObject);
+        //DontDestroyOnLoad(transform.root.gameObject);
     }
 
     // Call once at game start

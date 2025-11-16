@@ -1,14 +1,15 @@
 using System.Collections;
 using System.Collections.Generic;
+using Mirror;
 using TMPro;
+using Unity.VisualScripting;
 using UnityEngine;
 
-public class GameManager : MonoBehaviour
+public class GameManager : NetworkBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    [SerializeField] int playerCount = 4;
-    //private int playerCount = 7; // Set via Inspector or dynamically, players should join by clicking in the table!!
+    [SerializeField] int requiredPlayers = 4;
     private int maxRound = 7;
 
     private int currentRound = 1;
@@ -24,31 +25,70 @@ public class GameManager : MonoBehaviour
             return;
         }
         Instance = this;
-        DontDestroyOnLoad(transform.root.gameObject);
+        //DontDestroyOnLoad(transform.root.gameObject);
     }
 
-    private void Start()
+    [Server]
+    public void TryStartGame()
     {
-        InitializeGame(); // runs after all Awake()s
+        int connectedPlayers = NetworkServer.connections.Count;
+
+        if (connectedPlayers < requiredPlayers)
+        {
+            Debug.Log($"[GM] Not starting yet. Players={connectedPlayers}/{requiredPlayers}");
+            return;
+        }
+
+        Debug.Log("[GM] All players joined, initializing game.");
+        InitializeGame();
     }
+
+    [Server]
     private void InitializeGame()
     {
-        // Set up all core systems and managers
+        int playerCount = requiredPlayers;
+
+        // Set up core systems
         StockMarketManager.Instance.SetupMarket(playerCount);
-        PlayerManager.Instance.SetupPlayers(playerCount);
         DeckManager.Instance.SetupDecks();
         TurnManager.Instance.SetupTurnOrder();
 
-        UIManager.Instance.CreatePlayerPanels();
-        UIManager.Instance.CreateMarketRows();
+        // Now all game data is ready -> tell clients to build UI
+        //RpcInitClientUI(playerCount);
 
-        UIManager.Instance.HideAllUndoButtons();
+        SendInitialPlayerSnapshotToClients();
 
         // Start the first round
         StartRound();
     }
 
+    [Server]
+    private void SendInitialPlayerSnapshotToClients()
+    {
+        var players = PlayerManager.Instance.players;
+        int count = players.Count;
 
+        int[] ids = new int[count];
+        string[] names = new string[count];
+        int[] money = new int[count];
+
+        for (int i = 0; i < count; i++)
+        {
+            ids[i] = players[i].id;
+            names[i] = players[i].playerName;
+            money[i] = players[i].money;
+        }
+
+        RpcInitClientUI(ids, names, money);
+    }
+
+    [ClientRpc]
+    private void RpcInitClientUI(int[] ids, string[] names, int[] money)
+    {
+        UIManager.Instance.InitializeGameUI(ids, names, money);
+    }
+
+    [Server]
     public void StartRound()
     {
         roundText.text = currentRound.ToString();
@@ -69,20 +109,12 @@ public class GameManager : MonoBehaviour
         TurnManager.Instance.StartCharacterSelectionPhase();
     }
 
+    // TurnManager.MainPhaseLoop (server) calls ResolveEndOfRound() and then:
+    // GameManager.Instance.EndRound();
+
+    [Server]
     public void EndRound()
     {
-        // Resolve pending manipulations
-        TurnManager.Instance.ResolvePendingManipulationsEndOfRound();
-
-        // Resolve close sales: pay and move prices
-        StockMarketManager.Instance.ProcessCloseSales();
-
-        // NOW actually remove the sold cards from players' hands
-        PlayerManager.Instance.CommitCloseSellsForEndOfRound();
-
-        // Decide when to tax; for now we’ll keep it here:
-        TurnManager.Instance.ResolveTaxesEndOfRound();
-
         // Cleanup round-specific data
         TurnManager.Instance.CleanupRound();
         DeckManager.Instance.CleanupRound();
@@ -98,46 +130,59 @@ public class GameManager : MonoBehaviour
         else
         {
             PlayerManager.Instance.SettleRemainingHoldingsToCash();
+            DecideWinnerAndShow();
+        }
+    }
 
-            var winner = PlayerManager.Instance.players[0];
+    [Server]
+    private void DecideWinnerAndShow()
+    {
+        var players = PlayerManager.Instance.players;
 
-            List <PlayerManager.Player> otherWinners = new();
+        if (players.Count == 0) return;
 
-            for (int i = 0; i < PlayerManager.Instance.players.Count; i++)
+        var winner = players[0];
+        List<PlayerManager.Player> tied = new();
+
+        for (int i = 0; i < players.Count; i++)
+        {
+            var p = players[i];
+
+            if (p.money > winner.money)
             {
-                var player = PlayerManager.Instance.players[i];
-                
-                if (player.money > winner.money)
-                {
-                    winner = player;
-                    otherWinners.Clear();
-                }
-
-                else if (player.money == winner.money)
-                {
-                    otherWinners.Add(player);
-                }
+                winner = p;
+                tied.Clear();
             }
-
-            if(otherWinners != null)
+            else if (p.money == winner.money && p != winner)
             {
-                foreach (var p in otherWinners)
+                tied.Add(p);
+            }
+        }
+
+        // Tie-breaker: lower total bid spend wins? (Or whatever your logic is)
+        if (tied.Count > 0)
+        {
+            foreach (var p in tied)
+            {
+                if (winner.money == p.money)
                 {
-                    if(winner.money == p.money)
+                    if (TurnManager.Instance.GetTotalBidSpend(p.id) >
+                        TurnManager.Instance.GetTotalBidSpend(winner.id))
                     {
-                        if (TurnManager.Instance.GetTotalBidSpend(p.id) > TurnManager.Instance.GetTotalBidSpend(winner.id))
-                        {
-                            winner = p;
-                        }
+                        winner = p;
                     }
                 }
             }
+        }
 
+        if (winnerText != null)
+        {
             winnerText.text = $"Game is finished. The winner is {winner.playerName}";
             winnerText.gameObject.SetActive(true);
         }
     }
 
+    [Server]
     private void OnBiddingFinished()
     {
         TurnManager.Instance.BiddingFinished -= OnBiddingFinished;
@@ -146,6 +191,7 @@ public class GameManager : MonoBehaviour
         TurnManager.Instance.StartCharacterSelectionPhase();
     }
 
+    [Server]
     private void OnSelectionFinished()
     {
         TurnManager.Instance.SelectionFinished -= OnSelectionFinished;
