@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using Mirror;
 using TMPro;
 using Unity.VisualScripting;
@@ -79,14 +80,41 @@ public class GameManager : NetworkBehaviour
             money[i] = players[i].money;
         }
 
-        RpcInitClientUI(ids, names, money);
+        var sm = StockMarketManager.Instance;
+
+        var stocksList = sm.availableStocks;
+        StockType[] stocksArr = stocksList.ToArray();
+
+        int[] pricesArr = new int[stocksArr.Length];
+        for (int i = 0; i < stocksArr.Length; i++)
+        {
+            pricesArr[i] = sm.stockPrices[stocksArr[i]];
+        }
+
+        RpcInitClientUI(ids, names, money, stocksArr, pricesArr);
     }
 
     [ClientRpc]
-    private void RpcInitClientUI(int[] ids, string[] names, int[] money)
+    public void RpcInitClientUI(
+        int[] ids,
+        string[] names,
+        int[] money,
+        StockType[] stocks,
+        int[] prices)
     {
+        var sm = StockMarketManager.Instance;
+
+        sm.availableStocks = stocks.ToList();
+
+        sm.stockPrices = new Dictionary<StockType, int>();
+        for (int i = 0; i < stocks.Length; i++)
+        {
+            sm.stockPrices[stocks[i]] = prices[i];
+        }
+
         UIManager.Instance.InitializeGameUI(ids, names, money);
     }
+
 
     [Server]
     public void StartRound()

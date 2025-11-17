@@ -68,6 +68,12 @@ public class UIManager : MonoBehaviour
     public int LocalPlayerId => _localPlayerId;  // read-only accessor
     public bool HasLocalPlayer => _localPlayerId >= 0;
 
+    private int[] _cachedIds;
+    private string[] _cachedNames;
+    private int[] _cachedMoney;
+
+    private bool _gameUiInitialized;
+
     void Awake()
     {
         if (Instance != null && Instance != this)
@@ -206,11 +212,11 @@ public class UIManager : MonoBehaviour
             _playerPanels[pid] = panel;
         }
 
-        // Make sure interactivity respects local id
-        if (_localPlayerId >= 0)
-        {
-            SetLocalPlayerId(_localPlayerId);
-        }
+        //// Make sure interactivity respects local id
+        //if (_localPlayerId >= 0)
+        //{
+        //    SetLocalPlayerId(_localPlayerId);
+        //}
     }
 
     public void CreateMarketRows()
@@ -758,6 +764,16 @@ public class UIManager : MonoBehaviour
         Debug.Log($"[UI] SetLocalPlayerId -> {pid}"); // REMOVE LATER
         _localPlayerId = pid;
 
+        if (!_gameUiInitialized && _cachedIds != null)
+        {
+            BuildGameUI();
+        }
+
+        if (_playerPanels == null || _playerPanels.Count == 0)
+        {
+            return;
+        }
+
         // retag panels so only your seat is interactive on your turn
         foreach (var kv in _playerPanels)
         {
@@ -765,12 +781,9 @@ public class UIManager : MonoBehaviour
             var panel = kv.Value;
             bool isLocal = (kv.Key == _localPlayerId);
 
-            if (!isLocal)
-            {
-                panel.SetSellButtonsInteractable(false);
-                panel.SetAbilityButtonInteractable(false);
-                panel.SetEndTurnButtonInteractable(false);
-            }
+            panel.SetSellButtonsInteractable(isLocal);
+            panel.SetAbilityButtonInteractable(isLocal);
+            panel.SetEndTurnButtonInteractable(isLocal);
         }
 
         // if a turn is already active, recompute interactivity
@@ -779,16 +792,8 @@ public class UIManager : MonoBehaviour
             SetActivePlayer(_activePlayerId, enable: true);
         }
 
-        // refresh local panel snapshot
-        if (_playerPanels.TryGetValue(_localPlayerId, out var localPanel))
-        {
-            var p = PlayerManager.Instance.players.First(pp => pp.id == _localPlayerId);
-            if(p != null)
-            {
-                localPanel.UpdateMoney(p.money);
-                localPanel.UpdateStocks(p.stocks);
-            }
-        }
+        // refresh local panel snapshot 
+        //we need new rpc to refresh local panel snapshot later !!!
 
         ShowMessage($"You are Player {pid + 1}.");
     }
@@ -798,9 +803,34 @@ public class UIManager : MonoBehaviour
         int playerCount = ids.Length;
         Debug.Log($"[UI] InitializeGameUI players={playerCount}, local={_localPlayerId}");
 
-        CreatePlayerPanels(ids, names, money);   // uses PlayerManager.players
-        CreateMarketRows();     // uses StockMarketManager.availableStocks + stockPrices
+        _cachedIds = (int[])ids.Clone();
+        _cachedNames = (string[])names.Clone();
+        _cachedMoney = (int[])money.Clone();
+
+        if (_localPlayerId < 0)
+        {
+            Debug.Log("[UI] there is no local player id yet.");
+            return;
+        }
+
+        BuildGameUI();
+    }
+
+    private void BuildGameUI()
+    {
+        if (_cachedIds == null) return;
+
+        Debug.Log($"[UI] BuildGameUI using local={_localPlayerId}");
+
+        CreatePlayerPanels(_cachedIds, _cachedNames, _cachedMoney);
+        CreateMarketRows();
         HideAllUndoButtons();
+        // gerekiyorsa diğer UI setup fonksiyonların...
+        // CreateQuestsUI();
+        // CreateCharacterCardsUI();
+        // vs.
+
+        _gameUiInitialized = true;
     }
 
 
