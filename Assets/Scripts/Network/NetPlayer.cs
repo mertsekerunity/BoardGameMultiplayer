@@ -1,3 +1,4 @@
+using System;
 using Mirror;
 using Unity.VisualScripting;
 using UnityEngine;
@@ -75,11 +76,16 @@ public class NetPlayer : NetworkBehaviour
     [Command]
     public void CmdEndTurn()
     {
-        if (TurnManager.Instance.ActivePlayerId != pid)
+        int active = TurnManager.Instance.ActivePlayerId;
+
+        TargetToast($"[NetPlayer] CmdEndTurn from pid={pid}, active={active}");
+
+        if (active != pid)
         {
             TargetToast("Not your turn.");
             return;
         }
+
         TurnManager.Instance.EndActivePlayerTurn();
     }
 

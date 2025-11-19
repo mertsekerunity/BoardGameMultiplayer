@@ -98,13 +98,7 @@ public class PlayerPanel : MonoBehaviour
             btn.onClick.RemoveAllListeners();
             btn.onClick.AddListener(() =>
             {
-                if (playerId != TurnManager.Instance.ActivePlayerId)
-                {
-                    UIManager.Instance.ShowMessage("Not your turn.");
-                    return;
-                }
-                bool ok = TurnManager.Instance.TrySellOne(type, open);
-                if (!ok) UIManager.Instance.ShowMessage("Cannot sell now.");
+                UIManager.Instance.OnSellStock(type, open);
             });
         }
 
@@ -142,12 +136,7 @@ public class PlayerPanel : MonoBehaviour
 
         endTurnButton.onClick.AddListener(() =>
         {
-            if (playerId != TurnManager.Instance.ActivePlayerId)
-            {
-                UIManager.Instance.ShowMessage("Not your turn.");
-                return;
-            }
-            TurnManager.Instance.EndActivePlayerTurn();
+            UIManager.Instance.OnEndTurn();
         });
     }
 

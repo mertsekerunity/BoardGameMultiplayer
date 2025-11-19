@@ -334,7 +334,6 @@ public class TurnManager : NetworkBehaviour
         ActivePlayerId = pid;
         var player = PlayerManager.Instance.players[pid];
 
-        // Reveal UI
         UIManager.Instance.ShowCharacter(card, pid); 
 
         BeginActivePlayerTurn(pid, card.abilityType);

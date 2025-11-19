@@ -298,14 +298,27 @@ public class UIManager : MonoBehaviour
     {
         var lp = LocalNetPlayer;
         if (lp == null) 
-            {   
-                ShowMessage("No local network player.");
-                return; 
-            }
+        {   
+            ShowMessage("No local network player.");
+            return; 
+        }
+
+        if (_activePlayerId < 0)
+        {
+            ShowMessage("Round hasn't started yet.");
+            return;
+        }
+
+        if (_localPlayerId != _activePlayerId)
+        {
+            ShowMessage("Not your turn.");
+            return;
+        }
+
         lp.CmdBuy(stock);
     }
 
-    public void OnSellStock(int playerId, StockType stock, bool openSale)
+    public void OnSellStock(StockType stock, bool openSale)
     {
         var lp = LocalNetPlayer;
         if (lp == null)
@@ -313,6 +326,19 @@ public class UIManager : MonoBehaviour
             ShowMessage("No local network player.");
             return;
         }
+
+        if (_activePlayerId < 0)
+        {
+            ShowMessage("Round hasn't started yet.");
+            return;
+        }
+
+        if (_localPlayerId != _activePlayerId)
+        {
+            ShowMessage("Not your turn.");
+            return;
+        }
+
         lp.CmdSell(stock, openSale);
     }
 
@@ -322,6 +348,18 @@ public class UIManager : MonoBehaviour
         if (lp == null)
         {
             ShowMessage("No local network player.");
+            return;
+        }
+
+        if (_activePlayerId < 0)
+        {
+            ShowMessage("Round hasn't started yet.");
+            return;
+        }
+
+        if (_localPlayerId != _activePlayerId)
+        {
+            ShowMessage("Not your turn.");
             return;
         }
 
@@ -386,12 +424,44 @@ public class UIManager : MonoBehaviour
             ShowMessage("No local network player.");
             return;
         }
+
+        if (_activePlayerId < 0)
+        {
+            ShowMessage("Round hasn't started yet.");
+            return;
+        }
+
+        if (_localPlayerId != _activePlayerId)
+        {
+            ShowMessage("Not your turn.");
+            return;
+        }
+
         lp.CmdUndo();
     }
 
     public void OnEndTurn()
     {
-        LocalNetPlayer?.CmdEndTurn();
+        var lp = LocalNetPlayer;
+        if (lp == null)
+        {
+            ShowMessage("No local network player.");
+            return;
+        }
+
+        if (_activePlayerId < 0)
+        {
+            ShowMessage("Round hasn't started yet.");
+            return;
+        }
+
+        if (_localPlayerId != _activePlayerId)
+        {
+            ShowMessage("Not your turn.");
+            return;
+        }
+
+        LocalNetPlayer.CmdEndTurn();
     }
 
     // Show character card and player name when turn starts
@@ -412,10 +482,6 @@ public class UIManager : MonoBehaviour
     {
         // TODO: Implement popup or log
         Debug.Log("[MSG] " + message);
-        // Optional: if you have a small TMP text for toast:
-        // globalPrompt.gameObject.SetActive(true);
-        // globalPrompt.text = message;
-        // StartCoroutine(HideAfter(2f));
     }
 
     // Called whenever a player’s money changes
