@@ -47,6 +47,9 @@ public class TurnManager : NetworkBehaviour
     private bool _selectionWaiting;
     public event Action SelectionFinished;
 
+    private int _selectionCurrentPid = -1;
+    private List<CharacterCardSO> _selectionOptions;
+
     private int _biddingCurrentPid = -1;
     private readonly Dictionary<int, int> _playerBids = new(); // pid -> amount
 
@@ -246,47 +249,48 @@ public class TurnManager : NetworkBehaviour
     [Server]
     private IEnumerator SelectionPhaseLoop()
     {
-        // Prepare mapping fresh each round
         characterAssignments = new Dictionary<CharacterCardSO, int>();
 
-        var options = new List<CharacterCardSO>(availableCharacters);
+        _selectionOptions = new List<CharacterCardSO>(availableCharacters);
 
         var selectionOrderCopy = selectionOrder.ToList();
-
-        //Debug.Log($"[SELECT] START order={string.Join(",", selectionOrder)} options={options.Count}");
 
         foreach (int pid in selectionOrderCopy)
         {
             _selectionWaiting = true;
+            _selectionCurrentPid = pid;
 
-            UIManager.Instance.Selection_Show(
-                pickerPid: pid,
-                options: options,
-                onChooseConfirmed: (chosen) =>
-                {
-                    try
-                    {
-                        Debug.Log($"[SELECT] Confirmed pid={pid} -> #{(int)chosen.characterNumber}-{chosen.characterName}");
-                        characterAssignments[chosen] = pid;
-                        options.Remove(chosen);
-                        PlayerManager.Instance.players[pid].selectedCard = chosen;
-                        UIManager.Instance.Selection_Hide();
-                        _selectionWaiting = false;  // <<< the gate your loop waits on
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogError($"[SELECT] Callback EXCEPTION: {e}");
-                        // fail safe: don't deadlock the loop
-                        _selectionWaiting = false;
-                    }
-                });
+            int[] optionIds = _selectionOptions.Select(c => (int)c.characterNumber).ToArray();
+
+            RpcShowCharacterSelection(pid, optionIds);
+            //UIManager.Instance.Selection_Show(
+            //    pickerPid: pid,
+            //    options: options,
+            //    onChooseConfirmed: (chosen) =>
+            //    {
+            //        try
+            //        {
+            //            Debug.Log($"[SELECT] Confirmed pid={pid} -> #{(int)chosen.characterNumber}-{chosen.characterName}");
+            //            characterAssignments[chosen] = pid;
+            //            options.Remove(chosen);
+            //            PlayerManager.Instance.players[pid].selectedCard = chosen;
+            //            UIManager.Instance.Selection_Hide();
+            //            _selectionWaiting = false;  // <<< the gate your loop waits on
+            //        }
+            //        catch (Exception e)
+            //        {
+            //            Debug.LogError($"[SELECT] Callback EXCEPTION: {e}");
+            //            // fail safe: don't deadlock the loop
+            //            _selectionWaiting = false;
+            //        }
+            //    });
 
             // Wait until the callback flips the flag
             while (_selectionWaiting)
                 yield return null;
         }
 
-        // Done
+        _selectionCurrentPid = -1;
         SelectionFinished?.Invoke();
     }
 
@@ -1500,6 +1504,51 @@ public class TurnManager : NetworkBehaviour
         }
 
         _biddingWaiting = false;
+    }
+
+    [Server]
+    public void Server_ConfirmCharacterSelection(int pid, int cardId)
+    {
+        if (!_selectionWaiting || pid != _selectionCurrentPid)
+            return;
+
+        if (_selectionOptions == null || _selectionOptions.Count == 0)
+            return;
+
+        var chosen = _selectionOptions.FirstOrDefault(c => (int)c.characterNumber == cardId);
+
+        if (chosen == null)
+        {
+            Debug.LogWarning($"[Server_ConfirmCharacterSelection] No character with id={cardId} in current options.");
+            return;
+        }
+
+        Debug.Log($"[SELECT] Confirmed pid={pid} -> #{(int)chosen.characterNumber}-{chosen.characterName}");
+
+        characterAssignments[chosen] = pid;
+        _selectionOptions.Remove(chosen);
+        PlayerManager.Instance.players[pid].selectedCard = chosen;
+
+        RpcHideCharacterSelection();
+
+        _selectionWaiting = false;
+    }
+
+
+    [ClientRpc]
+    private void RpcShowCharacterSelection(int pickerPid, int[] optionIds)
+    {
+        bool isLocal = (UIManager.Instance.LocalPlayerId == pickerPid);
+        UIManager.Instance.ShowCharacterSelection(pickerPid, optionIds, isLocal);
+    }
+
+    [ClientRpc]
+    private void RpcHideCharacterSelection()
+    {
+        if (UIManager.Instance == null)
+            return;
+
+        UIManager.Instance.HideCharacterSelection();
     }
 
     [Server]

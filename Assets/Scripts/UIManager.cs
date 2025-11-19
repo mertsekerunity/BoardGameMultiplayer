@@ -699,46 +699,68 @@ public class UIManager : MonoBehaviour
             localPanel.SetUndoVisible(visible);
     }
 
-    public void Selection_Show(int pickerPid, List<CharacterCardSO> options, Action<CharacterCardSO> onChooseConfirmed)
+    public void ShowCharacterSelection(int pickerPid, int[] optionIds, bool isLocal)
     {
         characterSelectionPanel.gameObject.SetActive(true);
         foreach (Transform c in characterSelectionPanel) Destroy(c.gameObject);
 
-        var pName = PlayerManager.Instance.players.First(p => p.id == pickerPid).playerName;
+        string pName = GetPlayerNameById(pickerPid);
+
         if (selectionPrompt != null)
         {
             selectionPrompt.gameObject.SetActive(true);
             selectionPrompt.text = $"{pName}, choose your character";
         }
 
-        // Only show clickable items to the picker (or everyone if debug)
-        bool allow = (pickerPid == _localPlayerId);
-        //bool allow = (pickerPid == _localPlayerId);
+        var allChars = TurnManager.Instance.availableCharacters;
+        var options = allChars.Where(c => optionIds.Contains((int)c.characterNumber)).ToList();
+
+        bool allow = isLocal;
 
         foreach (var card in options)
         {
             var item = Instantiate(selectionItemPrefab, characterSelectionPanel);
             var captured = card;
+
             item.Bind(captured, () =>
             {
                 if (!allow) return;
+
                 ShowSelectionConfirm(
                     pickerPid,
                     $"Choose #{(int)captured.characterNumber} - {captured.characterName}?",
-                    onYes: () => onChooseConfirmed?.Invoke(captured),
+                    onYes: () =>
+                    {
+                        if (LocalNetPlayer == null)
+                        {
+                            Debug.LogWarning("[SELECT] LocalNetPlayer is null, cannot send CmdConfirmCharacterSelection.");
+                            return;
+                        }
+
+                        int cardId = (int)captured.characterNumber;
+                        LocalNetPlayer.CmdConfirmCharacterSelection(cardId);
+                    },
                     onNo: () => { }
                 );
             });
+
             item.SetInteractable(allow);
         }
     }
 
-    public void Selection_Hide()
+    public void HideCharacterSelection()
     {
         selectionPrompt.gameObject.SetActive(false);
         characterSelectionPanel.gameObject.SetActive(false);
         foreach (Transform c in characterSelectionPanel) Destroy(c.gameObject);
     }
+
+    private string GetPlayerNameById(int pid)
+    {
+        int idx = Array.IndexOf(_cachedIds,pid);
+        return _cachedNames[idx];
+    }
+
 
     public void HideAllUndoButtons()
     {

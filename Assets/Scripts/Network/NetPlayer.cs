@@ -110,6 +110,18 @@ public class NetPlayer : NetworkBehaviour
         TurnManager.Instance.SubmitBid_Server(pid, amount);
     }
 
+    [Command]
+    public void CmdConfirmCharacterSelection(int cardId)
+    {
+        if (TurnManager.Instance == null)
+        {
+            Debug.LogWarning("[CmdConfirmCharacterSelection] TurnManager.Instance is null on server.");
+            return;
+        }
+
+        TurnManager.Instance.Server_ConfirmCharacterSelection(pid, cardId);
+    }
+
     [TargetRpc]
     public void TargetBeginBidTurn(string playerName, int playerMoney)
     {
