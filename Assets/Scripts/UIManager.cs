@@ -58,6 +58,15 @@ public class UIManager : MonoBehaviour
     [SerializeField] private CharacterSelectionItem selectionItemPrefab;
     [SerializeField] private TextMeshProUGUI selectionPrompt; // “Player X, choose your character”
 
+    private struct PendingSelection
+    {
+        public int pickerPid;
+        public int[] optionIds;
+    }
+
+    private bool _hasPendingSelection;
+    private PendingSelection _pendingSelection;
+
     // A map from playerId → instantiated panel
     private Dictionary<int, PlayerPanel> _playerPanels = new Dictionary<int, PlayerPanel>();
     private Dictionary<StockType, MarketRow> _marketRows = new Dictionary<StockType, MarketRow>();
@@ -701,9 +710,6 @@ public class UIManager : MonoBehaviour
 
     public void ShowCharacterSelection(int pickerPid, int[] optionIds, bool isLocal)
     {
-        characterSelectionPanel.gameObject.SetActive(true);
-        foreach (Transform c in characterSelectionPanel) Destroy(c.gameObject);
-
         string pName = GetPlayerNameById(pickerPid);
 
         if (selectionPrompt != null)
@@ -712,7 +718,17 @@ public class UIManager : MonoBehaviour
             selectionPrompt.text = $"{pName}, choose your character";
         }
 
-        var allChars = TurnManager.Instance.availableCharacters;
+        if (!isLocal)
+        {
+            HideCharacterSelection();
+            return;
+        }
+
+        characterSelectionPanel.gameObject.SetActive(true);
+        foreach (Transform c in characterSelectionPanel) Destroy(c.gameObject);
+
+
+        var allChars = TurnManager.Instance.characterDeck;
         var options = allChars.Where(c => optionIds.Contains((int)c.characterNumber)).ToList();
 
         bool allow = isLocal;
@@ -753,6 +769,16 @@ public class UIManager : MonoBehaviour
         selectionPrompt.gameObject.SetActive(false);
         characterSelectionPanel.gameObject.SetActive(false);
         foreach (Transform c in characterSelectionPanel) Destroy(c.gameObject);
+    }
+
+    public void CachePendingSelection(int pickerPid, int[] optionIds)
+    {
+        _pendingSelection = new PendingSelection
+        {
+            pickerPid = pickerPid,
+            optionIds = optionIds
+        };
+        _hasPendingSelection = true;
     }
 
     private string GetPlayerNameById(int pid)
@@ -882,6 +908,17 @@ public class UIManager : MonoBehaviour
 
         // refresh local panel snapshot 
         //we need new rpc to refresh local panel snapshot later !!!
+
+        if (_hasPendingSelection)
+        {
+            var ps = _pendingSelection;
+            _hasPendingSelection = false;
+
+            bool isLocal = (pid == ps.pickerPid);
+            Debug.Log($"[SELECTION] Consuming pending selection: picker={ps.pickerPid}, isLocal={isLocal}");
+
+            ShowCharacterSelection(ps.pickerPid, ps.optionIds, isLocal);
+        }
 
         ShowMessage($"You are Player {pid + 1}.");
     }

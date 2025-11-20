@@ -90,7 +90,7 @@ public class TurnManager : NetworkBehaviour
 
     public bool CanUndoCurrentTurn => (ActivePlayerId >= 0) && (_history.Count > 0);
 
-    [SerializeField] private List<CharacterCardSO> characterDeck;
+    public List<CharacterCardSO> characterDeck;
 
     private int maxCharacters => characterDeck.Count;
 
@@ -148,8 +148,6 @@ public class TurnManager : NetworkBehaviour
     {
         Debug.Log("Discard Phase started.");
 
-        //Randomly discard character cards
-
         int playerCount = PlayerManager.Instance.players.Count;
         int discardCount = maxCharacters - (playerCount + 1);
 
@@ -167,7 +165,11 @@ public class TurnManager : NetworkBehaviour
         faceDownDiscards = discardDeck.Skip(faceUpCount).Take(faceDownCount).ToList();
         availableCharacters = discardDeck.Skip(discardCount).ToList();
 
-        UIManager.Instance.ShowFaceUpDiscards(faceUpDiscards);
+        //UIManager.Instance.ShowFaceUpDiscards(faceUpDiscards); // no UI call directly in server-side
+
+        int[] faceUpIds = faceUpDiscards.Select(c => (int)c.characterNumber).ToArray();
+
+        RpcShowFaceUpDiscards(faceUpIds);
     }
 
     [Server]
@@ -263,29 +265,7 @@ public class TurnManager : NetworkBehaviour
             int[] optionIds = _selectionOptions.Select(c => (int)c.characterNumber).ToArray();
 
             RpcShowCharacterSelection(pid, optionIds);
-            //UIManager.Instance.Selection_Show(
-            //    pickerPid: pid,
-            //    options: options,
-            //    onChooseConfirmed: (chosen) =>
-            //    {
-            //        try
-            //        {
-            //            Debug.Log($"[SELECT] Confirmed pid={pid} -> #{(int)chosen.characterNumber}-{chosen.characterName}");
-            //            characterAssignments[chosen] = pid;
-            //            options.Remove(chosen);
-            //            PlayerManager.Instance.players[pid].selectedCard = chosen;
-            //            UIManager.Instance.Selection_Hide();
-            //            _selectionWaiting = false;  // <<< the gate your loop waits on
-            //        }
-            //        catch (Exception e)
-            //        {
-            //            Debug.LogError($"[SELECT] Callback EXCEPTION: {e}");
-            //            // fail safe: don't deadlock the loop
-            //            _selectionWaiting = false;
-            //        }
-            //    });
 
-            // Wait until the callback flips the flag
             while (_selectionWaiting)
                 yield return null;
         }
@@ -336,9 +316,10 @@ public class TurnManager : NetworkBehaviour
         if (!characterAssignments.ContainsKey(card)) return;
         int pid = characterAssignments[card];
         ActivePlayerId = pid;
-        var player = PlayerManager.Instance.players[pid];
 
-        UIManager.Instance.ShowCharacter(card, pid); 
+        int cardId = (int)card.characterNumber;
+
+        RpcShowActiveCharacter(pid, cardId);
 
         BeginActivePlayerTurn(pid, card.abilityType);
     }
@@ -373,6 +354,61 @@ public class TurnManager : NetworkBehaviour
         UIManager.Instance.ClearAllHighlights();
     }
 
+    [ClientRpc]
+    private void RpcShowFaceUpDiscards(int[] faceUpIds)
+    {
+        if (UIManager.Instance == null)
+            return;
+
+        var list = new List<CharacterCardSO>();
+
+        foreach (int id in faceUpIds)
+        {
+            var card = characterDeck.FirstOrDefault(c => (int)c.characterNumber == id);
+            if (card != null)
+                list.Add(card);
+            else
+                Debug.LogWarning($"[DISCARD] Could not find character with id={id} in characterDeck.");
+        }
+
+        Debug.Log($"[DISCARD] ShowFaceUpDiscards on client, count={list.Count}");
+        UIManager.Instance.ShowFaceUpDiscards(list);
+    }
+
+    [ClientRpc]
+    private void RpcShowActiveCharacter(int pid, int cardId)
+    {
+        if (UIManager.Instance == null)
+            return;
+
+        var card = characterDeck.FirstOrDefault(c => (int)c.characterNumber == cardId);
+        if (card == null)
+        {
+            Debug.LogWarning($"[TURN] RpcShowActiveCharacter: could not find card id={cardId} in characterDeck");
+            return;
+        }
+
+        UIManager.Instance.ShowCharacter(card, pid);
+    }
+
+    [ClientRpc]
+    private void RpcHideActiveCharacter(int pid, int cardId)
+    {
+        if (UIManager.Instance == null)
+            return;
+
+        var card = characterDeck.FirstOrDefault(c => (int)c.characterNumber == cardId);
+        if (card == null)
+        {
+            Debug.LogWarning($"[TURN] RpcHideActiveCharacter: could not find card id={cardId} in characterDeck");
+            // HideCharacter kartı kullanmıyorsa sadece paneli kapatmak için
+            // overload varsa ona göre çağırabilirsin.
+            return;
+        }
+
+        UIManager.Instance.HideCharacter(card, pid);
+    }
+
     [Server]
     public void BeginActivePlayerTurn(int pid, CharacterAbilityType ability)
     {
@@ -392,10 +428,6 @@ public class TurnManager : NetworkBehaviour
         _abilityAvailable = true;
 
         RpcSetActivePlayer(pid, true);
-
-        UIManager.Instance.SetAbilityButtonState(true);
-        UIManager.Instance.SetUndoButtonVisible(pid == UIManager.Instance.LocalPlayerId);
-        UIManager.Instance.SetUndoButtonInteractable(false);
     }
 
     [Server]
@@ -404,15 +436,14 @@ public class TurnManager : NetworkBehaviour
         if (ActivePlayerId < 0) return;
 
         var card = PlayerManager.Instance.players[ActivePlayerId].selectedCard;
-        UIManager.Instance.HideCharacter(card, ActivePlayerId);
+
+        int cardId = (int)card.characterNumber;
+        RpcHideActiveCharacter(ActivePlayerId, cardId);
 
         // if the active character was Thief, pay now
         ResolveThiefPayoutsFor(ActivePlayerId);
 
         _history.Clear(); // can’t undo previous player’s actions
-
-        UIManager.Instance.SetUndoButtonInteractable(false);
-        UIManager.Instance.SetUndoButtonVisible(false);
 
         // Disable interactivity for this player on all clients
         RpcSetActivePlayer(ActivePlayerId, false);
@@ -1538,6 +1569,15 @@ public class TurnManager : NetworkBehaviour
     [ClientRpc]
     private void RpcShowCharacterSelection(int pickerPid, int[] optionIds)
     {
+        if (UIManager.Instance == null) return;
+
+        if (UIManager.Instance.LocalPlayerId <0)
+        {
+            UIManager.Instance.CachePendingSelection(pickerPid, optionIds);
+            Debug.Log($"[SELECTION] Cached pending selection: picker={pickerPid}");
+            return;
+        }
+
         bool isLocal = (UIManager.Instance.LocalPlayerId == pickerPid);
         UIManager.Instance.ShowCharacterSelection(pickerPid, optionIds, isLocal);
     }
