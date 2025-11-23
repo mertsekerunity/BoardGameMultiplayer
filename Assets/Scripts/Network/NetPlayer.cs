@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Mirror;
@@ -160,6 +160,18 @@ public class NetPlayer : NetworkBehaviour
         TurnManager.Instance.Server_OnGambleCancelled(pid);
     }
 
+    [Command]
+    public void CmdConfirmManipChoice(int manipId)
+    {
+        TurnManager.Instance.Server_OnManipOptionChosen(pid, manipId);
+    }
+
+    [Command]
+    public void CmdCancelManipChoice()
+    {
+        TurnManager.Instance.Server_OnManipOptionCancelled(pid);
+    }
+
     [TargetRpc]
     public void TargetBeginBidTurn(string playerName, int playerMoney)
     {
@@ -175,7 +187,7 @@ public class NetPlayer : NetworkBehaviour
     }
 
     [TargetRpc]
-    public void TargetAskStockTarget(string prompt, int[] stockTypeIds)
+    public void TargetAskStockTarget(string prompt, string confirmPrefix, int[] stockTypeIds)
     {
         var candidates = new HashSet<StockType>(stockTypeIds.Select(id => (StockType)id));
 
@@ -189,7 +201,7 @@ public class NetPlayer : NetworkBehaviour
 
                 UIManager.Instance.ShowAbilityConfirm(
                 pid,
-                $"Apply taxes to {label}?",
+                $"{confirmPrefix} {label}?",
                 onYes: () =>
                 {
                     CmdConfirmStockTarget((int)stock);
@@ -201,6 +213,44 @@ public class NetPlayer : NetworkBehaviour
                     UIManager.Instance.HidePrompt();
                 });
 
+            },
+            onCancelled: () =>
+            {
+                CmdCancelStockTarget();
+            });
+    }
+
+    [TargetRpc]
+    public void TargetAskManipStockTarget(string prompt, int[] stockTypeIds)
+    {
+        var candidates = new HashSet<StockType>(stockTypeIds.Select(id => (StockType)id));
+
+        bool isProtect = prompt.IndexOf("protect", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        UIManager.Instance.ShowStockTargetPanel(
+            pid,
+            candidates,
+            prompt,
+            onChosen: stock =>
+            {
+                string label = stock.ToString();
+
+                string confirmText = isProtect
+                ? $"Apply protection to {label}?"
+                : $"Apply this manipulation to {label}?";
+
+                UIManager.Instance.ShowAbilityConfirm(
+                    pid,
+                    confirmText,
+                    onYes: () =>
+                    {
+                        CmdConfirmStockTarget((int)stock);
+                        UIManager.Instance.HidePrompt();
+                    },
+                    onNo: () =>
+                    {
+                        UIManager.Instance.HidePrompt();
+                    });
             },
             onCancelled: () =>
             {
@@ -295,6 +345,48 @@ public class NetPlayer : NetworkBehaviour
     public void TargetSetAbilityButtonState(bool enabled)
     {
         UIManager.Instance.SetAbilityButtonState(enabled);
+    }
+
+    [TargetRpc]
+    public void TargetShowPrivateManipPeek(ManipulationType m)
+    {
+        UIManager.Instance.ShowPrivateManipPeek(pid, m);
+    }
+
+    [TargetRpc]
+    public void TargetOnManipQueued(ManipulationType m, StockType s)
+    {
+
+        UIManager.Instance.HandleManipQueued(pid, m, s);
+    }
+
+    [TargetRpc]
+    public void TargetOnProtectionQueued(StockType s)
+    {
+
+        UIManager.Instance.HandleProtectionChosen(pid, s);
+    }
+
+    [TargetRpc]
+    public void TargetAskManipChoice(string prompt, int[] manipIds)
+    {
+        var options = manipIds.Select(id => (ManipulationType)id).ToList();
+
+        UIManager.Instance.ShowManipulationChoice(
+            pid,
+            options,
+            prompt,
+            (chosen, discardIgnored, returnIgnored, cancelSentinel) =>
+            {
+                if ((int)cancelSentinel == -999)
+                {
+                    CmdCancelManipChoice();
+                }
+                else
+                {
+                    CmdConfirmManipChoice((int)chosen);
+                }
+            });
     }
 
     [TargetRpc]

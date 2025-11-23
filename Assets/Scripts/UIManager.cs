@@ -12,8 +12,6 @@ public class UIManager : MonoBehaviour
 {
     public static UIManager Instance { get; private set; }
 
-    [SerializeField] private bool debugShowManipToAll = false;
-
     [SerializeField] private TextMeshProUGUI globalPrompt;
 
     [SerializeField] private Transform playersPanelContainer;
@@ -797,23 +795,23 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    private void HandleManipQueued(int pid, ManipulationType m, StockType s)
+    public void HandleManipQueued(int pid, ManipulationType m, StockType s)
     {
-        if (!debugShowManipToAll && pid != _localPlayerId) return;
+        if (pid != _localPlayerId) return;
         if (_marketRows.TryGetValue(s, out var row))
             row.SetPrivateTag(TagFor(m));
     }
 
-    private void HandleManipRemoved(int pid, ManipulationType m, StockType s)
+    public void HandleManipRemoved(int pid, ManipulationType m, StockType s)
     {
-        if (!debugShowManipToAll && pid != _localPlayerId) return;
+        if (pid != _localPlayerId) return;
         if (_marketRows.TryGetValue(s, out var row))
             row.ClearPrivateTag();
     }
 
-    private void HandleProtectionChosen(int pid, StockType s)
+    public void HandleProtectionChosen(int pid, StockType s)
     {
-        if (!debugShowManipToAll && pid != _localPlayerId) return;
+        if (pid != _localPlayerId) return;
         if (_marketRows.TryGetValue(s, out var row))
             row.SetPrivateTag("Protected");
     }
@@ -828,7 +826,7 @@ public class UIManager : MonoBehaviour
     {
         if (!privateManipPeek) return;
 
-        bool isLocal = debugShowManipToAll || (actingPid == _localPlayerId);
+        bool isLocal = (actingPid == _localPlayerId);
         privateManipPeek.gameObject.SetActive(isLocal);
         if (isLocal)
             privateManipPeek.text = $"drawn manipulation: {TagFor(m)}";

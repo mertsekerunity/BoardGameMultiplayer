@@ -184,8 +184,6 @@ public class TurnManager : NetworkBehaviour
         faceDownDiscards = discardDeck.Skip(faceUpCount).Take(faceDownCount).ToList();
         availableCharacters = discardDeck.Skip(discardCount).ToList();
 
-        //UIManager.Instance.ShowFaceUpDiscards(faceUpDiscards); // no UI call directly in server-side
-
         int[] faceUpIds = faceUpDiscards.Select(c => (int)c.characterNumber).ToArray();
 
         RpcShowFaceUpDiscards(faceUpIds);
@@ -669,266 +667,19 @@ public class TurnManager : NetworkBehaviour
 
         if (_activeAbility == CharacterAbilityType.Manipulator)
         {
-            var trio = GetOrCreateManipOptions(ActivePlayerId); // cached; same 3 shown on reopen
-            var pName = PlayerManager.Instance.players[ActivePlayerId].playerName;
-
-            UIManager.Instance.ShowManipulationChoice(
-                ActivePlayerId,
-                trio,
-                $"{pName}, choose a manipulation",
-                (chosen, _discardIgnored, _returnIgnored, cancelSentinel) =>
-                {
-                    if ((int)cancelSentinel == -999)
-                    {
-                        // Cancel: keep cached trio; don’t return to deck; don’t consume ability
-                        UIManager.Instance.HidePrompt();
-                        return;
-                    }
-
-                    // Build enabled targets (not already manipulated/protected)
-                    var enabledStocks = new HashSet<StockType>(
-                        StockMarketManager.Instance.availableStocks
-                            .Where(s => !_manipulatedStocksThisRound.Contains(s) && !_protectedStocksThisRound.Contains(s))
-                    );
-
-                    if (enabledStocks.Count == 0)
-                    {
-                        UIManager.Instance.ShowMessage("No stocks available to manipulate.");
-                        // Keep cached trio so they’ll see the same choices next time
-                        return;
-                    }
-
-                    var manipPrompt = $"{pName}, choose a stock to apply manipulation";
-                    UIManager.Instance.ShowStockTargetPanel(
-                        ActivePlayerId,
-                        enabledStocks,
-                        manipPrompt,
-                        onChosen: (applyStock) =>
-                        {
-                            if (!TryReserveSpecificManipulationTarget(applyStock))
-                            {
-                                UIManager.Instance.ShowMessage("That stock can’t be manipulated (already reserved).");
-                                return;
-                            }
-
-                            // Queue chosen for end-of-round; now CONSUME the cached trio
-                            var undoQueue = QueueManipulation(ActivePlayerId, chosen, applyStock);
-                            ConsumeManipOptions(ActivePlayerId, chosen);
-
-                            // Next: choose a stock to PROTECT (not the one just manipulated)
-                            var protectCandidates = new HashSet<StockType>(
-                                StockMarketManager.Instance.availableStocks
-                                    .Where(s => s != applyStock && !_protectedStocksThisRound.Contains(s))
-                            );
-
-                            if (protectCandidates.Count == 0)
-                            {
-                                // No protection possible; still consume the ability
-                                PushAbilityBarrier(() => { undoQueue?.Invoke(); });
-                                UIManager.Instance.HidePrompt();
-                                return;
-                            }
-
-                            var protectPrompt = $"{pName}, choose a stock to protect";
-                            UIManager.Instance.ShowStockTargetPanel(
-                                ActivePlayerId,
-                                protectCandidates,
-                                protectPrompt,
-                                onChosen: (protectStock) =>
-                                {
-                                    if (!TryProtectStock(protectStock))
-                                    {
-                                        UIManager.Instance.ShowMessage("That stock is already protected.");
-                                        // We still consumed the manipulation above
-                                        PushAbilityBarrier(() => { undoQueue?.Invoke(); });
-                                        UIManager.Instance.HidePrompt();
-                                        return;
-                                    }
-
-                                    // Optional private “Protected” tag
-                                    OnProtectionChosenUI?.Invoke(ActivePlayerId, protectStock);
-
-                                    // Finalize ability (barrier; undo unprotect + unqueue)
-                                    PushAbilityBarrier(() =>
-                                    {
-                                        UnprotectStock(protectStock);
-                                        undoQueue?.Invoke();
-                                    });
-                                    UIManager.Instance.HidePrompt();
-                                },
-                                onCancelled: () =>
-                                {
-                                    // No protection picked; still consume ability (only manipulation queued)
-                                    PushAbilityBarrier(() => { undoQueue?.Invoke(); });
-                                    UIManager.Instance.HidePrompt();
-                                }
-                            );
-                        },
-                        onCancelled: () =>
-                        {
-                            // Cancel at stock-pick stage: keep the trio cached; ability remains available
-                            UIManager.Instance.HidePrompt();
-                        }
-                    );
-                }
-            );
-
-            return true; // handled; flow continues via callbacks
+            return Server_TryUseManipulator();
         }
 
         // --- Lottery Winner (#5): claim lottery + apply ONE random manipulation to ONE chosen stock ---
         if (_activeAbility == CharacterAbilityType.LotteryWinner)
         {
-            int payout = DeckManager.Instance.ClaimLottery();
-            PlayerManager.Instance.AddMoney(ActivePlayerId, payout);
-
-            var m = GetOrCreateSingleManip(ActivePlayerId); // cached; same card on reopen
-
-            UIManager.Instance.ShowPrivateManipPeek(ActivePlayerId, m);
-
-            var enabled = new HashSet<StockType>(
-                StockMarketManager.Instance.availableStocks
-                    .Where(s => !_manipulatedStocksThisRound.Contains(s) && !_protectedStocksThisRound.Contains(s))
-            );
-
-            if (enabled.Count == 0)
-            {
-                UIManager.Instance.ShowMessage("No stocks available to manipulate.");
-                // Consume ability now; set barrier with full revert for fairness (in case you later allow ability-undo)
-                PushAbilityBarrier(() =>
-                {
-                    // Return cached card and revert payout
-                    DeckManager.Instance.ReturnManipulationToDeck(m);
-                    ConsumeSingleManip(ActivePlayerId); // just clears cache
-                    DeckManager.Instance.RestoreLottery(payout);
-                    PlayerManager.Instance.RemoveMoney(ActivePlayerId, payout);
-                });
-                return true;
-            }
-
-            string playerName = PlayerManager.Instance.players[ActivePlayerId].playerName;
-            string prompt = $"{playerName}, choose a stock to apply manipulation";
-
-            UIManager.Instance.ShowStockTargetPanel(
-                ActivePlayerId,
-                enabled,
-                prompt,
-                onChosen: (stock) =>
-                {
-                    UIManager.Instance.HidePrivateManipPeek();
-
-                    if (!TryReserveSpecificManipulationTarget(stock))
-                    {
-                        UIManager.Instance.ShowMessage("That stock can’t be manipulated.");
-                        // Revert and clear cache; ability not consumed yet (player can press again)
-                        DeckManager.Instance.ReturnManipulationToDeck(m);
-                        ConsumeSingleManip(ActivePlayerId);
-                        DeckManager.Instance.RestoreLottery(payout);
-                        PlayerManager.Instance.RemoveMoney(ActivePlayerId, payout);
-                        UIManager.Instance.HidePrompt();
-                        return;
-                    }
-
-                    var undoQueue = QueueManipulation(ActivePlayerId, m, stock);
-                    ConsumeSingleManip(ActivePlayerId); // card committed
-
-                    // Ability consumed → barrier; provides full revert semantics
-                    PushAbilityBarrier(() =>
-                    {
-                        undoQueue?.Invoke(); // returns m; frees reservation
-                        DeckManager.Instance.RestoreLottery(payout);
-                        PlayerManager.Instance.RemoveMoney(ActivePlayerId, payout);
-                    });
-                    UIManager.Instance.HidePrompt();
-                },
-                onCancelled: () =>
-                {
-                    // Cancel: return cached card and revert payout; ability remains available
-                    DeckManager.Instance.ReturnManipulationToDeck(m);
-                    ConsumeSingleManip(ActivePlayerId);
-                    DeckManager.Instance.RestoreLottery(payout);
-                    PlayerManager.Instance.RemoveMoney(ActivePlayerId, payout);
-                    UIManager.Instance.HidePrompt();
-                }
-            );
-
-            return true;
+            return Server_TryUseLotteryWinner();
         }
 
         // --- Broker (#6): +1 buy/sell limits this turn AND apply ONE random manipulation to ONE chosen stock ---
         if (_activeAbility == CharacterAbilityType.Broker)
         {
-            RaiseLimitsForThisTurn(buyLimit: 3, sellLimit: 4);
-
-            var m = GetOrCreateSingleManip(ActivePlayerId); // cached
-
-            UIManager.Instance.ShowPrivateManipPeek(ActivePlayerId, m);
-
-            var enabled = new HashSet<StockType>(
-                StockMarketManager.Instance.availableStocks
-                    .Where(s => !_manipulatedStocksThisRound.Contains(s) && !_protectedStocksThisRound.Contains(s))
-            );
-
-            string playerName = PlayerManager.Instance.players[ActivePlayerId].playerName;
-
-            if (enabled.Count == 0)
-            {
-                UIManager.Instance.ShowMessage("No stocks available to manipulate.");
-                // Still consume ability for the limits benefit
-                PushAbilityBarrier(() =>
-                {
-                    RaiseLimitsForThisTurn(buyLimit: 2, sellLimit: 3);
-                    DeckManager.Instance.ReturnManipulationToDeck(m);
-                    ConsumeSingleManip(ActivePlayerId);
-                });
-                return true;
-            }
-
-            string prompt = $"{playerName}, choose a stock to apply manipulation";
-
-            UIManager.Instance.ShowStockTargetPanel(
-                ActivePlayerId,
-                enabled,
-                prompt,
-                onChosen: (stock) =>
-                {
-                    UIManager.Instance.HidePrivateManipPeek();
-
-                    if (!TryReserveSpecificManipulationTarget(stock))
-                    {
-                        UIManager.Instance.ShowMessage("That stock can’t be manipulated.");
-                        // Revert limits and return cached card; ability not consumed
-                        RaiseLimitsForThisTurn(buyLimit: 2, sellLimit: 3);
-                        DeckManager.Instance.ReturnManipulationToDeck(m);
-                        ConsumeSingleManip(ActivePlayerId);
-                        UIManager.Instance.HidePrompt();
-                        return;
-                    }
-
-                    var undoQueue = QueueManipulation(ActivePlayerId, m, stock);
-                    ConsumeSingleManip(ActivePlayerId);
-                    //UIManager.Instance.SetMarketSecretTagIfLocal(ActivePlayerId, stock, m);
-                    //UIManager.Instance.HandleManipQueued(ActivePlayerId, m, stock);
-
-                    // Ability consumed → barrier
-                    PushAbilityBarrier(() =>
-                    {
-                        RaiseLimitsForThisTurn(buyLimit: 2, sellLimit: 3);
-                        undoQueue?.Invoke();
-                    });
-                    UIManager.Instance.HidePrompt();
-                },
-                onCancelled: () =>
-                {
-                    // Cancel: revert limits and return cached card
-                    RaiseLimitsForThisTurn(buyLimit: 2, sellLimit: 3);
-                    DeckManager.Instance.ReturnManipulationToDeck(m);
-                    ConsumeSingleManip(ActivePlayerId);
-                    UIManager.Instance.HidePrompt();
-                }
-            );
-
-            return true;
+            return Server_TryUseBroker();
         }
 
         if (_activeAbility == CharacterAbilityType.Blocker || _activeAbility == CharacterAbilityType.Thief)
@@ -960,6 +711,146 @@ public class TurnManager : NetworkBehaviour
     }
 
     [Server]
+    private bool Server_TryUseManipulator()
+    {
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
+        if (np == null)
+            return false;
+
+        var trio = GetOrCreateManipOptions(ActivePlayerId);
+        if (trio == null || trio.Count == 0)
+        {
+            np.TargetToast("No manipulation options available.");
+            return false;
+        }
+
+        int[] ids = trio.Select(m => (int)m).ToArray();
+        string prompt = $"{PlayerManager.Instance.players[ActivePlayerId].playerName}, choose a manipulation";
+
+        np.TargetAskManipChoice(prompt, ids);
+        return true;
+    }
+
+    [Server]
+    public void Server_OnManipOptionChosen(int pickerPid, int manipId)
+    {
+        if (pickerPid != ActivePlayerId)
+            return;
+
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(pickerPid);
+        if (np == null)
+            return;
+
+        var trio = GetOrCreateManipOptions(pickerPid);
+        var chosen = (ManipulationType)manipId;
+        if (!trio.Contains(chosen))
+            return;
+
+        var enabledStocks = new HashSet<StockType>(
+            StockMarketManager.Instance.availableStocks
+                .Where(s => !_manipulatedStocksThisRound.Contains(s) &&
+                            !_protectedStocksThisRound.Contains(s)));
+
+        if (enabledStocks.Count == 0)
+        {
+            np.TargetToast("No stocks available to manipulate.");
+            return;
+        }
+
+        string manipPrompt = $"{PlayerManager.Instance.players[pickerPid].playerName}, choose a stock to apply manipulation";
+
+        RequestManipStockTarget(
+            pickerPid,
+            enabledStocks,
+            manipPrompt,
+            onChosen: (applyStock) =>
+            {
+                if (!TryReserveSpecificManipulationTarget(applyStock))
+                {
+                    np.TargetToast("That stock can't be manipulated (already reserved).");
+                    return;
+                }
+
+                QueueManipulation(pickerPid, chosen, applyStock);
+                ConsumeManipOptions(pickerPid, chosen);
+                Server_NotifyManipQueued(pickerPid, chosen, applyStock);
+
+                var protectCandidates = new HashSet<StockType>(
+                    StockMarketManager.Instance.availableStocks
+                        .Where(s => s != applyStock &&
+                                    !_protectedStocksThisRound.Contains(s))
+                );
+
+                if (protectCandidates.Count == 0)
+                {
+                    PushAbilityBarrier();
+                    return;
+                }
+
+                string protectPrompt = $"{PlayerManager.Instance.players[pickerPid].playerName}, choose a stock to protect";
+
+                RequestManipStockTarget(
+                    pickerPid,
+                    protectCandidates,
+                    protectPrompt,
+                    onChosen: (protectStock) =>
+                    {
+                        if (!TryProtectStock(protectStock))
+                        {
+                            np.TargetToast("That stock is already protected.");
+                            PushAbilityBarrier();
+                            return;
+                        }
+
+                        OnProtectionChosenUI?.Invoke(pickerPid, protectStock); //BUNU SOR
+                        Server_NotifyProtectionQueued(pickerPid, protectStock);
+                        PushAbilityBarrier();
+                    },
+                    onCancelled: () =>
+                    {
+                        PushAbilityBarrier();
+                    });
+            },
+            onCancelled: () =>
+            {
+                // ability still can be used.
+            });
+    }
+
+    [Server]
+    public void Server_OnManipOptionCancelled(int pickerPid)
+    {
+        if (pickerPid != ActivePlayerId)
+            return;
+
+    }
+
+    [Server]
+    private void RequestManipStockTarget(int pickerPid, HashSet<StockType> candidates, string prompt, Action<StockType> onChosen, Action onCancelled)
+    {
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(pickerPid);
+        if (np == null)
+        {
+            onCancelled?.Invoke();
+            return;
+        }
+
+        _pendingStockTarget = new PendingStockTarget
+        {
+            pickerPid = pickerPid,
+            candidates = new HashSet<StockType>(candidates),
+            onChosen = onChosen,
+            onCancelled = onCancelled
+        };
+
+        int[] ids = candidates.Select(s => (int)s).ToArray();
+        np.TargetAskManipStockTarget(prompt, ids);
+    }
+
+    [Server]
     private bool Server_TryUseTaxCollector()
     {
         var enabled = new HashSet<StockType>(StockMarketManager.Instance.availableStocks);
@@ -978,6 +869,7 @@ public class TurnManager : NetworkBehaviour
             pickerPid: ActivePlayerId,
             candidates: enabled,
             prompt: prompt,
+            confirmPrefix: "Apply taxes to",
             onChosen: stock =>
             {
                 ScheduleTaxCollector(ActivePlayerId, stock);
@@ -1089,6 +981,139 @@ public class TurnManager : NetworkBehaviour
         if (_activeAbility != CharacterAbilityType.Gambler) return;
     }
 
+    [Server]
+    private bool Server_TryUseLotteryWinner()
+    {
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
+        if (np == null)
+            return false;
+
+        int payout = DeckManager.Instance.ClaimLottery();
+        PlayerManager.Instance.AddMoney(ActivePlayerId, payout);
+
+        Server_SyncPlayerState(ActivePlayerId);
+
+        var m = GetOrCreateSingleManip(ActivePlayerId);
+
+        np.TargetShowPrivateManipPeek(m);
+
+        var enabled = new HashSet<StockType>(
+            StockMarketManager.Instance.availableStocks.Where(s => !_manipulatedStocksThisRound.Contains(s) && !_protectedStocksThisRound.Contains(s)));
+
+        if (enabled.Count == 0)
+        {
+            DeckManager.Instance.ReturnManipulationToDeck(m);
+            ConsumeSingleManip(ActivePlayerId);
+
+            np.TargetToast("No stocks available to manipulate.");
+
+            PushAbilityBarrier();
+            return false;
+        }
+
+        string playerName = PlayerManager.Instance.players[ActivePlayerId].playerName;
+        string prompt = $"{playerName}, choose a stock to apply manipulation";
+
+        RequestStockTarget(
+            pickerPid: ActivePlayerId,
+            candidates: enabled,
+            prompt: prompt,
+            confirmPrefix: "Apply manipulation to",
+            onChosen: stock =>
+            {
+                if (!TryReserveSpecificManipulationTarget(stock))
+                {
+                    np.TargetToast("That stock can't be manipulated.");
+
+                    DeckManager.Instance.ReturnManipulationToDeck(m);
+                    ConsumeSingleManip(ActivePlayerId);
+
+                    return;
+                }
+
+                QueueManipulation(ActivePlayerId, m, stock);
+                Server_NotifyManipQueued(ActivePlayerId, m, stock);
+                ConsumeSingleManip(ActivePlayerId);
+
+                PushAbilityBarrier();
+            },
+            onCancelled: () =>
+            {
+                DeckManager.Instance.ReturnManipulationToDeck(m);
+                ConsumeSingleManip(ActivePlayerId);
+            });
+
+        return true;
+    }
+
+    [Server]
+    private bool Server_TryUseBroker()
+    {
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
+        if (np == null)
+            return false;
+
+        RaiseLimitsForThisTurn(buyLimit: 3, sellLimit: 4);
+
+        var m = GetOrCreateSingleManip(ActivePlayerId);
+
+        np.TargetShowPrivateManipPeek(m);
+
+        var enabled = new HashSet<StockType>(
+            StockMarketManager.Instance.availableStocks
+                .Where(s => !_manipulatedStocksThisRound.Contains(s) &&
+                            !_protectedStocksThisRound.Contains(s))
+        );
+
+        string playerName = PlayerManager.Instance.players[ActivePlayerId].playerName;
+
+        if (enabled.Count == 0)
+        {
+            DeckManager.Instance.ReturnManipulationToDeck(m);
+            ConsumeSingleManip(ActivePlayerId);
+
+            np.TargetToast("No stocks available to manipulate. Limits increased for this turn.");
+
+            PushAbilityBarrier();
+            return true;
+        }
+
+        string prompt = $"{playerName}, choose a stock to apply manipulation";
+
+        RequestStockTarget(
+            pickerPid: ActivePlayerId,
+            candidates: enabled,
+            prompt: prompt,
+            confirmPrefix: "Apply manipulation to",
+            onChosen: stock =>
+            {
+
+                if (!TryReserveSpecificManipulationTarget(stock))
+                {
+                    np.TargetToast("That stock can't be manipulated.");
+
+                    DeckManager.Instance.ReturnManipulationToDeck(m);
+                    ConsumeSingleManip(ActivePlayerId);
+                    return;
+                }
+
+                QueueManipulation(ActivePlayerId, m, stock);
+                Server_NotifyManipQueued(ActivePlayerId,m,stock);
+                ConsumeSingleManip(ActivePlayerId);
+
+                PushAbilityBarrier();
+            },
+            onCancelled: () =>
+            {
+                DeckManager.Instance.ReturnManipulationToDeck(m);
+                ConsumeSingleManip(ActivePlayerId);
+            });
+
+        return true;
+    }
+
     [ClientRpc]
     private void RpcSyncPlayerState(int pid, int money, int[] stockTypeIds, int[] stockCounts)
     {
@@ -1115,7 +1140,7 @@ public class TurnManager : NetworkBehaviour
     }
 
     [Server]
-    private void RequestStockTarget(int pickerPid, HashSet<StockType> candidates, string prompt, Action<StockType> onChosen, Action onCancelled)
+    private void RequestStockTarget(int pickerPid, HashSet<StockType> candidates, string prompt, string confirmPrefix, Action<StockType> onChosen, Action onCancelled)
     {
         var nm = NetworkManager.singleton as CustomNetworkManager;
         var np = nm?.GetPlayerByPid(pickerPid);
@@ -1135,7 +1160,7 @@ public class TurnManager : NetworkBehaviour
         };
 
         int[] ids = candidates.Select(s => (int)s).ToArray();
-        np.TargetAskStockTarget(prompt, ids);
+        np.TargetAskStockTarget(prompt, confirmPrefix, ids);
     }
 
     [Server]
@@ -1205,6 +1230,27 @@ public class TurnManager : NetworkBehaviour
         cancel?.Invoke();
     }
 
+    [Server]
+    private void Server_NotifyManipQueued(int pid, ManipulationType m, StockType s)
+    {
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(pid);
+        if (np == null)
+            return;
+
+        np.TargetOnManipQueued(m, s);
+    }
+
+    [Server]
+    private void Server_NotifyProtectionQueued(int pid, StockType s)
+    {
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(pid);
+        if (np == null)
+            return;
+
+        np.TargetOnProtectionQueued(s);
+    }
 
     [Server]
     public bool TryReserveManipulationTarget(out StockType stock)

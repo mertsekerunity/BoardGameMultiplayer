@@ -26,7 +26,7 @@ public class DeckManager : MonoBehaviour
     public event Action<ManipulationType> OnManipulationCardDrawn;
     public event Action<TaxType> OnTaxCardDrawn;
     public event Action OnDecksReshuffled;
-    public event Action<int> OnLotteryChanged; // optional UI hook
+    public event Action<int> OnLotteryChanged;
 
     private void Awake()
     {
