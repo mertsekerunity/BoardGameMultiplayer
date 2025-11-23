@@ -121,6 +121,25 @@ public class TurnManager : NetworkBehaviour
         public ManipulationType card;
         public StockType stock;
     }
+    private class PendingStockTarget
+    {
+        public int pickerPid;
+        public HashSet<StockType> candidates;
+        public Action<StockType> onChosen;
+        public Action onCancelled;
+    }
+    private class PendingCharacterTarget
+    {
+        public int pickerPid;
+        public CharacterAbilityType ability;
+        public HashSet<int> candidates;
+        public Action<int> onChosen;
+        public Action onCancelled;
+    }
+
+    private PendingCharacterTarget _pendingCharacterTarget;
+
+    private PendingStockTarget _pendingStockTarget;
 
     public event Action BiddingFinished;
 
@@ -483,27 +502,14 @@ public class TurnManager : NetworkBehaviour
     }
 
     [Server]
-    private void PushAbilityBarrier(Action undo)
+    private void PushAbilityBarrier(Action undo = null)
     {
         _abilityAvailable = false;
-        UIManager.Instance.SetAbilityButtonState(false);
 
-        _history.Push(new TurnHistoryEntry
-        {
-            type = TurnActionType.Ability,
-            ability = _activeAbility,
-            undo = () =>
-            {
-                // kept for completeness in case you allow some abilities to be undoable later
-                undo?.Invoke();
-                _abilityAvailable = true;
-                UIManager.Instance.SetAbilityButtonState(true);
-            },
-            undoable = false // <<< barrier
-        });
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
 
-        // Top is a barrier → no undo available until player does a new Buy/Sell
-        UIManager.Instance.SetUndoButtonInteractable(false);
+        np?.TargetSetAbilityButtonState(false);
     }
 
     [Server]
@@ -648,16 +654,16 @@ public class TurnManager : NetworkBehaviour
     {
         if (ActivePlayerId < 0 || !_abilityAvailable) return false;
 
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
+
         var myNum = GetMyCharacterNumber(ActivePlayerId);
         if (myNum.HasValue && IsCharacterBlocked(myNum.Value))
         {
-            UIManager.Instance.ShowMessage("Your ability is blocked this round.");
+            np.TargetToastAbilityBlocked();
+           
             _abilityAvailable = false;
-            UIManager.Instance.SetAbilityButtonState(false);
-
-            // non-undoable barrier so Undo doesn’t cross this
-            _history.Push(new TurnHistoryEntry { type = TurnActionType.Ability, undoable = false });
-            UIManager.Instance.SetUndoButtonInteractable(false);
+            np?.TargetSetAbilityButtonState(false);
             return false;
         }
 
@@ -925,155 +931,280 @@ public class TurnManager : NetworkBehaviour
             return true;
         }
 
-        // Targeted abilities (Blocker, Thief): confirm before applying, then push barrier
-        if (_activeAbility == CharacterAbilityType.Blocker ||
-            _activeAbility == CharacterAbilityType.Thief)
+        if (_activeAbility == CharacterAbilityType.Blocker || _activeAbility == CharacterAbilityType.Thief)
         {
-            string abiText = $"{PlayerManager.Instance.players[ActivePlayerId].playerName}, choose a character to use ability on";
-            UIManager.Instance.ShowPrompt(abiText);
-
-            RequestCharacterTarget(ActivePlayerId, _activeAbility, (chosenNum) =>
-            {
-                string label = _activeAbility.ToString();
-                UIManager.Instance.ShowAbilityConfirm(
-                    ActivePlayerId,
-                    $"Use {label} on #{chosenNum}?",
-                    onYes: () =>
-                    {
-                        var undo = PlayerManager.Instance
-                            .ExecuteAbilityWithUndo_Targeted(ActivePlayerId, _activeAbility, chosenNum);
-
-                        UIManager.Instance.HidePrompt();
-
-                        if (undo == null)
-                        {
-                            Debug.Log("Ability had no effect."); // REMOVE LATER !!!
-                            UIManager.Instance.ShowMessage("Ability had no effect.");
-                            return;
-                        }
-
-                        PushAbilityBarrier(undo);
-                    },
-                    onNo: () => { /* do nothing; player can press Ability again */ }
-                );
-            });
-
-            return true; // consumed the Ability button click
+            return Server_TryUseBlockerOrThief();
         }
 
         if (_activeAbility == CharacterAbilityType.TaxCollector)
         {
-            var enabled = new HashSet<StockType>(StockMarketManager.Instance.availableStocks);
-            if (enabled.Count == 0)
-            {
-                UIManager.Instance.ShowMessage("No stocks available for taxes.");
-                return false;
-            }
-
-            string pName = PlayerManager.Instance.players[ActivePlayerId].playerName;
-
-            UIManager.Instance.ShowStockTargetPanel(
-                ActivePlayerId,
-                enabled,
-                $"{pName}, choose stock to apply taxes",
-                onChosen: stock =>
-                {
-                    ScheduleTaxCollector(ActivePlayerId, stock);
-
-                    // consume ability now (we keep it non-undoable like Blocker/Thief)
-                    PushAbilityBarrier(undo: () =>
-                    {
-                        // if you ever allow undo for abilities:
-                        UnscheduleTaxCollector(ActivePlayerId, stock);
-                    });
-                },
-                onCancelled: () =>
-                {
-                    // do nothing; they can press Ability again later in the same turn
-                });
-
-            return true;
+            return Server_TryUseTaxCollector();
         }
 
         if (_activeAbility == CharacterAbilityType.Gambler)
         {
-            int money = PlayerManager.Instance.players[ActivePlayerId].money;
-
-            void TakeN(int n)
-            {
-                var taken = new List<StockType>();
-                for (int i = 0; i < n; i++)
-                {
-                    var s = DeckManager.Instance.DrawRandomStock();
-                    PlayerManager.Instance.AddStock(ActivePlayerId, s, 1);
-                    taken.Add(s);
-                }
-                PlayerManager.Instance.RemoveMoney(ActivePlayerId, 3 * n);
-
-                // consume ability, but keep non-undoable barrier
-                PushAbilityBarrier(undo: () =>
-                {
-                    // if you later make abilities undoable, revert here:
-                    PlayerManager.Instance.AddMoney(ActivePlayerId, 3 * n);
-                    foreach (var s in taken)
-                    {
-                        PlayerManager.Instance.RemoveStock(ActivePlayerId, s, 1);
-                        DeckManager.Instance.ReturnStockToRandom(s);
-                    }
-                });
-            }
-
-            if (money >= 6)
-            {
-                UIManager.Instance.ShowAbilityConfirm(
-                    ActivePlayerId,
-                    "Gamble: take 2 random stocks for 6$?",
-                    onYes: () => TakeN(2),
-                    onNo: () =>
-                    {
-                        if (money >= 3)
-                        {
-                            UIManager.Instance.ShowAbilityConfirm(
-                                ActivePlayerId,
-                                "Take 1 random stock for 3$?",
-                                onYes: () => TakeN(1),
-                                onNo: () => { /* cancelled, keep ability available */ }
-                            );
-                        }
-                        else
-                        {
-                            UIManager.Instance.ShowMessage("Not enough money to gamble.");
-                        }
-                    });
-            }
-            else if (money >= 3)
-            {
-                UIManager.Instance.ShowAbilityConfirm(
-                    ActivePlayerId,
-                    "Gamble: take 1 random stock for 3$?",
-                    onYes: () => TakeN(1),
-                    onNo: () => { /* cancelled */ }
-                );
-            }
-            else
-            {
-                UIManager.Instance.ShowMessage("Not enough money to gamble.");
-            }
-
-            return true;
+            return Server_TryUseGambler();
         }
 
-        // Non-targeted abilities (Gambler, Manipulator, Lottery, Broker, TaxCollector, Inheritor)
+        // Non-targeted abilities (Trader, Inheritor)
         var immediateUndo = PlayerManager.Instance.ExecuteAbilityWithUndo(ActivePlayerId, _activeAbility);
+
         if (immediateUndo == null)
         {
-            UIManager.Instance.ShowMessage("Ability cannot be used now.");
+            np?.TargetToast("Ability cannot be used now.");
             return false;
         }
 
-        PushAbilityBarrier(immediateUndo);
+        PushAbilityBarrier();
         return true;
     }
+
+    [Server]
+    private bool Server_TryUseTaxCollector()
+    {
+        var enabled = new HashSet<StockType>(StockMarketManager.Instance.availableStocks);
+        if (enabled.Count == 0)
+        {
+            var nm = NetworkManager.singleton as CustomNetworkManager;
+            var np = nm?.GetPlayerByPid(ActivePlayerId);
+            np?.TargetToast("No stocks available for taxes.");
+            return false;
+        }
+
+        string pName = PlayerManager.Instance.players[ActivePlayerId].playerName;
+        string prompt = $"{pName}, choose stock to apply taxes";
+
+        RequestStockTarget(
+            pickerPid: ActivePlayerId,
+            candidates: enabled,
+            prompt: prompt,
+            onChosen: stock =>
+            {
+                ScheduleTaxCollector(ActivePlayerId, stock);
+
+                // Ability consumed
+                PushAbilityBarrier(undo: null);
+            },
+            onCancelled: () =>
+            {
+                // do nothing
+            });
+
+        return true;
+    }
+
+    [Server]
+    private bool Server_TryUseBlockerOrThief()
+    {
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
+        if (np == null)
+            return false;
+
+        RequestCharacterTarget(
+        actingPid: ActivePlayerId,
+        ability: _activeAbility,
+        onChosen: chosenNum =>
+        {
+            var ok = PlayerManager.Instance
+                .ExecuteAbility_Targeted(ActivePlayerId, _activeAbility, chosenNum);
+
+            if (!ok)
+            {
+                np.TargetToast("Ability had no effect.");
+                return;
+            }
+
+            PushAbilityBarrier(undo: null);
+        },
+        onCancelled: () =>
+        {
+            // cancelled, ability still can be used.
+        });
+
+        return true;
+    }
+
+    [Server]
+    private bool Server_TryUseGambler()
+    {
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
+        if (np == null)
+            return false;
+
+        int money = PlayerManager.Instance.players[ActivePlayerId].money;
+
+        if (money < 3)
+        {
+            np.TargetToast("Not enough money to gamble.");
+            return false;
+        }
+
+        np.TargetAskGamble(money);
+        return true;
+    }
+
+    [Server]
+    public void Server_OnGambleChosen(int pickerPid, int cardsToTake)
+    {
+        if (pickerPid != ActivePlayerId) return;
+        if (_activeAbility != CharacterAbilityType.Gambler) return;
+        if (cardsToTake <= 0) return;
+
+        int money = PlayerManager.Instance.players[ActivePlayerId].money;
+
+        if (cardsToTake == 2 && money < 6)
+        {
+            if (money >= 3)
+                cardsToTake = 1;
+            else
+                return;
+        }
+        else if (cardsToTake == 1 && money < 3)
+        {
+            return;
+        }
+
+        var taken = new List<StockType>();
+
+        for (int i = 0; i < cardsToTake; i++)
+        {
+            var s = DeckManager.Instance.DrawRandomStock();
+            PlayerManager.Instance.AddStock(ActivePlayerId, s, 1);
+            taken.Add(s);
+        }
+
+        PlayerManager.Instance.RemoveMoney(ActivePlayerId, 3 * cardsToTake);
+
+        Server_SyncPlayerState(ActivePlayerId);
+
+        PushAbilityBarrier(undo: null);
+    }
+
+    [Server]
+    public void Server_OnGambleCancelled(int pickerPid)
+    {
+        if (pickerPid != ActivePlayerId) return;
+        if (_activeAbility != CharacterAbilityType.Gambler) return;
+    }
+
+    [ClientRpc]
+    private void RpcSyncPlayerState(int pid, int money, int[] stockTypeIds, int[] stockCounts)
+    {
+        var stocks = new Dictionary<StockType, int>();
+
+        for (int i = 0; i < stockTypeIds.Length && i < stockCounts.Length; i++)
+        {
+            stocks[(StockType)stockTypeIds[i]] = stockCounts[i];
+        }
+
+        UIManager.Instance.SyncPlayerState(pid, money, stocks);
+    }
+
+    [Server]
+    public void Server_SyncPlayerState(int pid)
+    {
+        var pl = PlayerManager.Instance.players[pid];
+
+        var owned = pl.stocks.Where(kv => kv.Value > 0).ToList();
+        int[] stockIds = owned.Select(kv => (int)kv.Key).ToArray();
+        int[] stockCounts = owned.Select(kv => kv.Value).ToArray();
+
+        RpcSyncPlayerState(pid, pl.money, stockIds, stockCounts);
+    }
+
+    [Server]
+    private void RequestStockTarget(int pickerPid, HashSet<StockType> candidates, string prompt, Action<StockType> onChosen, Action onCancelled)
+    {
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(pickerPid);
+        if (np == null)
+        {
+            Debug.LogError($"[TAX] No NetPlayer for pid={pickerPid}");
+            onCancelled?.Invoke();
+            return;
+        }
+
+        _pendingStockTarget = new PendingStockTarget
+        {
+            pickerPid = pickerPid,
+            candidates = new HashSet<StockType>(candidates),
+            onChosen = onChosen,
+            onCancelled = onCancelled
+        };
+
+        int[] ids = candidates.Select(s => (int)s).ToArray();
+        np.TargetAskStockTarget(prompt, ids);
+    }
+
+    [Server]
+    public void Server_OnStockTargetChosen(int pickerPid, int stockId)
+    {
+        if (_pendingStockTarget == null)
+            return;
+
+        if (_pendingStockTarget.pickerPid != pickerPid)
+            return;
+
+        var stock = (StockType)stockId;
+        if (!_pendingStockTarget.candidates.Contains(stock))
+            return;
+
+        var cb = _pendingStockTarget.onChosen;
+        _pendingStockTarget = null;
+
+        cb?.Invoke(stock);
+    }
+
+    [Server]
+    public void Server_OnStockTargetCancelled(int pickerPid)
+    {
+        if (_pendingStockTarget == null)
+            return;
+
+        if (_pendingStockTarget.pickerPid != pickerPid)
+            return;
+
+        var cancel = _pendingStockTarget.onCancelled;
+        _pendingStockTarget = null;
+
+        cancel?.Invoke();
+    }
+
+    [Server]
+    public void Server_OnCharacterTargetChosen(int pickerPid, int charNum)
+    {
+        if (_pendingCharacterTarget == null)
+            return;
+
+        if (_pendingCharacterTarget.pickerPid != pickerPid)
+            return;
+
+        if (!_pendingCharacterTarget.candidates.Contains(charNum))
+            return;
+
+        var cb = _pendingCharacterTarget.onChosen;
+        _pendingCharacterTarget = null;
+
+        cb?.Invoke(charNum);
+    }
+
+    [Server]
+    public void Server_OnCharacterTargetCancelled(int pickerPid)
+    {
+        if (_pendingCharacterTarget == null)
+            return;
+
+        if (_pendingCharacterTarget.pickerPid != pickerPid)
+            return;
+
+        var cancel = _pendingCharacterTarget.onCancelled;
+        _pendingCharacterTarget = null;
+
+        cancel?.Invoke();
+    }
+
 
     [Server]
     public bool TryReserveManipulationTarget(out StockType stock)
@@ -1176,14 +1307,11 @@ public class TurnManager : NetworkBehaviour
     public bool UndoLast()
     {
         if (ActivePlayerId < 0) return false;
-        if (_history.Count == 0) return false;
-
-        // Abilities are barriers: you cannot undo them or go past them
-        var top = _history.Peek();
-        if (top.type == TurnActionType.Ability && top.undoable == false)
+        if (_history.Count == 0)
         {
-            UIManager.Instance.ShowMessage("Abilities cannot be undone.");
-            UIManager.Instance.SetUndoButtonInteractable(false);
+            var nm = NetworkManager.singleton as CustomNetworkManager;
+            var np = nm?.GetPlayerByPid(ActivePlayerId);
+            np?.TargetToast("Nothing to undo.");
             return false;
         }
 
@@ -1234,12 +1362,6 @@ public class TurnManager : NetworkBehaviour
                     _sellUsed = Mathf.Max(0, _sellUsed - 1);
                     break;
                 }
-            case TurnActionType.Ability:
-                {
-                    // Normally won't reach here (barrier blocks it), but kept for future undoable abilities
-                    entry.undo?.Invoke();
-                    break;
-                }
         }
 
         if (_buyUsed == 0 && _sellUsed == 0)
@@ -1247,18 +1369,6 @@ public class TurnManager : NetworkBehaviour
             _turnAction = TurnActionType.None;
             _lockedBuyPrice.Clear();
             _lockedSellPrice.Clear();
-        }
-
-        // Update Undo button: enabled only if stack not empty and top is not a barrier
-        if (_history.Count == 0)
-        {
-            UIManager.Instance.SetUndoButtonInteractable(false);
-        }
-        else
-        {
-            var newTop = _history.Peek();
-            bool canUndo = !(newTop.type == TurnActionType.Ability && newTop.undoable == false);
-            UIManager.Instance.SetUndoButtonInteractable(canUndo);
         }
 
         return true;
@@ -1298,8 +1408,7 @@ public class TurnManager : NetworkBehaviour
     }
 
     [Server]
-    public void ScheduleTaxCollector(int collectorPid, StockType stock)
-    => _pendingTaxes.Add((collectorPid, stock));
+    public void ScheduleTaxCollector(int collectorPid, StockType stock) => _pendingTaxes.Add((collectorPid, stock));
 
     [Server]
     public void UnscheduleTaxCollector(int collectorPid, StockType stock)
@@ -1389,20 +1498,42 @@ public class TurnManager : NetworkBehaviour
     }
 
     [Server]
-    public void RequestCharacterTarget(int actingPid, CharacterAbilityType ability, Action<int> onChosen)
+    public void RequestCharacterTarget(int actingPid, CharacterAbilityType ability, Action<int> onChosen, Action onCancelled)
     {
         BuildTargetsForAbility(actingPid, ability, out var enabled, out var disabled);
 
-        if (enabled.Count == 0)
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(actingPid);
+
+        if (np == null)
         {
-            UIManager.Instance.ShowMessage("No valid targets.");
+            Debug.LogError($"[TARGET] No NetPlayer for pid={actingPid}");
+            onCancelled?.Invoke();
             return;
         }
 
-        UIManager.Instance.ShowCharacterTargetPanel(actingPid, enabled, disabled, (num) =>
+        if (enabled.Count == 0)
         {
-            onChosen?.Invoke(num);
-        });
+            np.TargetToast("No valid targets.");
+            onCancelled?.Invoke();
+            return;
+        }
+
+        _pendingCharacterTarget = new PendingCharacterTarget
+        {
+            pickerPid = actingPid,
+            ability = ability,
+            candidates = new HashSet<int>(enabled),
+            onChosen = onChosen,
+            onCancelled = onCancelled
+        };
+
+        int[] enabledArr = enabled.ToArray();
+        int[] disabledArr = disabled.ToArray();
+
+        string prompt = $"{PlayerManager.Instance.players[actingPid].playerName}, " + $"choose a character to use {ability} on";
+
+        np.TargetAskCharacterTarget(prompt, enabledArr, disabledArr, (int)ability);
     }
 
     [Server]

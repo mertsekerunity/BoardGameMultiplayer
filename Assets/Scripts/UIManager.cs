@@ -560,7 +560,7 @@ public class UIManager : MonoBehaviour
     int actingPid,
     HashSet<int> enabled,
     HashSet<int> disabled,
-    Action<int> onPick)
+    Action<int> onChosen)
     {
         if (!characterTargetPanel) return;
 
@@ -575,7 +575,7 @@ public class UIManager : MonoBehaviour
         }
 
         if (isLocal)
-            characterTargetPanel.Show(enabled, disabled, onPick);
+            characterTargetPanel.Show(enabled, disabled, onChosen);
         else
             characterTargetPanel.Hide();            // ensure it’s not visible here
     }
@@ -958,14 +958,20 @@ public class UIManager : MonoBehaviour
         _gameUiInitialized = true;
     }
 
-
     public void InitializeLocalPlayerUI(int pid)
     {
         Debug.Log($"[UI] InitializeLocalPlayerUI pid={pid}");
 
         SetLocalPlayerId(pid);
     }
-
+    public void SyncPlayerState(int pid, int money, Dictionary<StockType, int> stocks)
+    {
+        if (_playerPanels.TryGetValue(pid, out var panel))
+        {
+            panel.UpdateMoney(money);
+            panel.UpdateStocks(stocks);
+        }
+    }
 
     private NetPlayer LocalNetPlayer =>
         Mirror.NetworkClient.isConnected ? Mirror.NetworkClient.localPlayer?.GetComponent<NetPlayer>() : null;

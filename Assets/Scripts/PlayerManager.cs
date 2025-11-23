@@ -471,6 +471,11 @@ public class PlayerManager : MonoBehaviour
                 return null;
         }
     }
+    public bool ExecuteAbility_Targeted(int actingPid, CharacterAbilityType ability, int chosenNum)
+    {
+        var undo = ExecuteAbilityWithUndo_Targeted(actingPid, ability, chosenNum);
+        return (undo != null);
+    }
 
     public Action ExecuteAbilityWithUndo_Targeted(int playerId, CharacterAbilityType abilityType, int targetCharacterNumber)
     {
