@@ -15,9 +15,7 @@ public class NetPlayer : NetworkBehaviour
     {
         base.OnStartLocalPlayer();
 
-        //UIManager.Instance?.SetLocalPlayerId(pid);
         Debug.Log($"[NetPlayer] OnStartLocalPlayer, pid={pid}");
-        //UIManager.Instance.InitializeLocalPlayerUI(pid);
     }
 
     void OnPidChanged(int oldValue, int newValue)

@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using Mirror;
 using UnityEngine;
 
 public class PlayerManager : MonoBehaviour
@@ -51,22 +52,28 @@ public class PlayerManager : MonoBehaviour
             stocks = new Dictionary<StockType, int>()
         };
 
-        // Give starting stocks same way as SetupPlayers
-        var available = StockMarketManager.Instance.availableStocks;
-        for (int j = 0; j < 3; j++)
-        {
-            var stock = available[UnityEngine.Random.Range(0, available.Count)];
-            if (!p.stocks.ContainsKey(stock))
-            {
-                p.stocks[stock] = 0;
-            }
-            p.stocks[stock]++;
-        }
-
         players.Add(p);
         return p;
     }
 
+    [Server]
+    public void Server_GiveInitialStocks(int perPlayer = 3)
+    {
+        var available = StockMarketManager.Instance.availableStocks;
+
+        foreach (var p in players)
+        {
+            for (int j = 0; j < perPlayer; j++)
+            {
+                var stock = available[UnityEngine.Random.Range(0, available.Count)];
+                if (!p.stocks.ContainsKey(stock))
+                    p.stocks[stock] = 0;
+                p.stocks[stock]++;
+            }
+
+            TurnManager.Instance.Server_SyncPlayerState(p.id);
+        }
+    }
 
     // Single-player helper – not used in multiplayer flow anymore.
     public void SetupPlayers(int playerCount)
@@ -257,220 +264,6 @@ public class PlayerManager : MonoBehaviour
         }
     }
 
-
-    public Action ExecuteAbilityWithUndo(int playerId, CharacterAbilityType abilityType)
-    {
-        switch (abilityType)
-        {
-            case CharacterAbilityType.Blocker: // #1
-                {
-                    // Character numbers present this round (as ints)
-                    var candidates = TurnManager.Instance.characterAssignments
-                        .Keys
-                        .Select(k => (int)k.characterNumber)                  
-                        .Where(num => num >= 2 && num <= 9                   
-                                      && !TurnManager.Instance.IsCharacterBlocked(num))
-                        .Distinct()
-                        .ToList();
-
-                    if (candidates.Count == 0)
-                    {
-                        UIManager.Instance.ShowMessage("No valid character to block.");
-                        return null;
-                    }
-
-                    int targetChar = candidates[UnityEngine.Random.Range(0, candidates.Count)];
-                    TurnManager.Instance.BlockCharacter(targetChar);
-
-                    return () => TurnManager.Instance.UnblockCharacter(targetChar);
-                }
-
-            case CharacterAbilityType.Thief: // #2
-                {
-                    // Thief targets a CHARACTER NUMBER that exists this round,
-                    // cannot be Blocker (#1), and cannot be a character already blocked.
-                    var targetEntryOpts = TurnManager.Instance.characterAssignments
-                        .Where(kv =>
-                        {
-                            int num = (int)kv.Key.characterNumber;
-                            return num != 1 && !TurnManager.Instance.IsCharacterBlocked(num) && kv.Value != playerId;
-                        })
-                        .ToList();
-
-                    if (targetEntryOpts.Count == 0)
-                    {
-                        UIManager.Instance.ShowMessage("No valid target for Thief.");
-                        return null;
-                    }
-
-                    var targetEntry = targetEntryOpts[UnityEngine.Random.Range(0, targetEntryOpts.Count)];
-                    int victimPid = targetEntry.Value;
-
-                    int victimMoney = PlayerManager.Instance.players[victimPid].money;
-                    int stealAmount = victimMoney / 2;
-
-                    // Schedule payout at the END of the Thief's turn
-                    TurnManager.Instance.ScheduleThiefPayout(thiefPid: playerId, victimPid: victimPid, amount: stealAmount);
-
-                    return () => TurnManager.Instance.UnscheduleThiefPayout(playerId, victimPid, stealAmount);
-                }
-
-            case CharacterAbilityType.Trader: // #3
-                {
-                    // Per-turn deltas: buy -1, sell +1 (your TurnManager holds the deltas)
-                    TurnManager.Instance.EnableTraderForThisTurn();
-                    return () => TurnManager.Instance.DisableTraderForThisTurn();
-                }
-
-            case CharacterAbilityType.Manipulator: // #4 (uses TWICE)
-                {
-                    var undos = new List<Action>();
-                    int repeats = 2;
-
-                    for (int k = 0; k < repeats; k++)
-                    {
-                        if (!TurnManager.Instance.TryReserveManipulationTarget(out var target))
-                        {
-                            UIManager.Instance.ShowMessage("No stocks left to manipulate this round.");
-                            break;
-                        }
-
-                        // Draw 3, TEMP choose 1 (index 0), discard 1 (index 1), return 1 (index 2)
-                        var a = DeckManager.Instance.DrawManipulation();
-                        var b = DeckManager.Instance.DrawManipulation();
-                        var c = DeckManager.Instance.DrawManipulation();
-                        var chosen = a;
-                        var discard = b;
-                        var ret = c;
-
-                        DeckManager.Instance.DiscardManipulation(discard);
-                        DeckManager.Instance.ReturnManipulationToDeck(ret);
-
-                        // Queue chosen (revealed at end of round)
-                        var undoQueue = TurnManager.Instance.QueueManipulation(playerId, chosen, target);
-
-                        undos.Add(() =>
-                        {
-                            // remove from queue, free reservation, return chosen to deck
-                            undoQueue?.Invoke();
-                            // (we keep discard/return as-is during undo to keep deck handling simple)
-                        });
-                    }
-
-                    return () =>
-                    {
-                        for (int i = undos.Count - 1; i >= 0; i--) undos[i]?.Invoke();
-                    };
-                }
-
-            case CharacterAbilityType.LotteryWinner: // #5
-                {
-                    int payout = DeckManager.Instance.ClaimLottery();
-                    AddMoney(playerId, payout);
-
-                    Action undoManip = null;
-                    // Also queue 1 manipulation (if a target remains)
-                    if (TurnManager.Instance.TryReserveManipulationTarget(out var target))
-                    {
-                        var m = DeckManager.Instance.DrawManipulation();
-                        undoManip = TurnManager.Instance.QueueManipulation(playerId, m, target);
-                    }
-                    else
-                    {
-                        UIManager.Instance.ShowMessage("No stocks left to manipulate this round.");
-                    }
-
-                    return () =>
-                    {
-                        RemoveMoney(playerId, payout);
-                        DeckManager.Instance.RestoreLottery(payout);
-                        undoManip?.Invoke();
-                    };
-                }
-
-            case CharacterAbilityType.Broker: // #6
-                {
-                    // Limits +1/+1 this turn
-                    TurnManager.Instance.RaiseLimitsForThisTurn(buyLimit: 3, sellLimit: 4);
-
-                    Action undoManip = null;
-                    if (TurnManager.Instance.TryReserveManipulationTarget(out var target))
-                    {
-                        var m = DeckManager.Instance.DrawManipulation();
-                        undoManip = TurnManager.Instance.QueueManipulation(playerId, m, target);
-                    }
-                    else
-                    {
-                        UIManager.Instance.ShowMessage("No stocks left to manipulate this round.");
-                    }
-
-                    return () =>
-                    {
-                        TurnManager.Instance.RaiseLimitsForThisTurn(buyLimit: 2, sellLimit: 3);
-                        undoManip?.Invoke();
-                    };
-                }
-
-            case CharacterAbilityType.Gambler: // #7
-                {
-                    // Up to 2 random stocks @ $3 each; if money < 6, try 1; if < 3, do nothing.
-                    int money = PlayerManager.Instance.players[playerId].money;
-                    int count = (money >= 6) ? 2 : (money >= 3 ? 1 : 0);
-                    if (count == 0)
-                    {
-                        UIManager.Instance.ShowMessage("Not enough money to gamble.");
-                        return null;
-                    }
-
-                    var taken = new List<StockType>();
-                    for (int i = 0; i < count; i++)
-                    {
-                        var s = DeckManager.Instance.DrawRandomStock();
-                        AddStock(playerId, s, 1);
-                        taken.Add(s);
-                    }
-                    RemoveMoney(playerId, 3 * count);
-
-                    return () =>
-                    {
-                        AddMoney(playerId, 3 * count);
-                        foreach (var s in taken)
-                        {
-                            RemoveStock(playerId, s, 1);
-                            DeckManager.Instance.ReturnStockToRandom(s);
-                        }
-                    };
-                }
-
-            case CharacterAbilityType.TaxCollector: // #8
-                {
-                    var t = DeckManager.Instance.DrawTaxCard();
-                    var stock = (StockType)Enum.Parse(typeof(StockType), t.ToString());
-                    TurnManager.Instance.ScheduleTaxCollector(playerId, stock);
-
-                    return () =>
-                    {
-                        TurnManager.Instance.UnscheduleTaxCollector(playerId, stock);
-                        DeckManager.Instance.ReturnTaxToDeck(t);
-                    };
-                }
-
-            case CharacterAbilityType.Inheritor: // #9
-                {
-                    var stock = DeckManager.Instance.DrawRandomStock();
-                    AddStock(playerId, stock, 1);
-
-                    return () =>
-                    {
-                        RemoveStock(playerId, stock, 1);
-                        DeckManager.Instance.ReturnStockToRandom(stock);
-                    };
-                }
-
-            default:
-                return null;
-        }
-    }
     public bool ExecuteAbility_Targeted(int actingPid, CharacterAbilityType ability, int chosenNum)
     {
         var undo = ExecuteAbilityWithUndo_Targeted(actingPid, ability, chosenNum);

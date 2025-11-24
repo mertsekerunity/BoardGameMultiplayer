@@ -1,9 +1,10 @@
-﻿using Mirror;
-using UnityEngine;
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using Mirror;
+using UnityEngine;
+using static Unity.Collections.AllocatorManager;
 
 public class TurnManager : NetworkBehaviour
 {
@@ -547,9 +548,10 @@ public class TurnManager : NetworkBehaviour
     [Server]
     public bool TryBuyOne(StockType stock)
     {
-        Debug.Log($"[TURN] BUY {_turnAction} used={_buyUsed},{_sellUsed}"); // REMOVE LATER !!!
-
         if (ActivePlayerId < 0) return false;
+
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
 
         // lock action type: only "buy" this turn
         if (_turnAction == TurnActionType.None) _turnAction = TurnActionType.Buy;
@@ -580,16 +582,22 @@ public class TurnManager : NetworkBehaviour
 
         _history.Push(new TurnHistoryEntry { type = TurnActionType.Buy, stock = stock });
         _buyUsed++;
-        UIManager.Instance.SetUndoButtonInteractable(true);
+
+        Server_SyncPlayerState(ActivePlayerId);
+        Server_SyncStockPrice(stock);
+
+        np?.TargetSetUndoInteractable(true);
+
         return true;
     }
 
     [Server]
     public bool TrySellOne(StockType stock, bool openSale)
     {
-        Debug.Log($"[TURN] SELL {_turnAction} used={_buyUsed},{_sellUsed}");
-
         if (ActivePlayerId < 0) return false;
+
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
 
         // lock action type: only "sell" this turn
         if (_turnAction == TurnActionType.None) _turnAction = TurnActionType.Sell;
@@ -615,6 +623,9 @@ public class TurnManager : NetworkBehaviour
             // Player received 'current'; top up so net == anchored
             int topUp = anchoredGain - current;
             if (topUp > 0) PlayerManager.Instance.AddMoney(ActivePlayerId, topUp);
+
+            Server_SyncPlayerState(ActivePlayerId);
+            Server_SyncStockPrice(stock);
         }
         else
         {
@@ -643,7 +654,9 @@ public class TurnManager : NetworkBehaviour
         });
 
         _sellUsed++;
-        UIManager.Instance.SetUndoButtonInteractable(true);
+
+        np?.TargetSetUndoInteractable(true);
+
         return true;
     }
 
@@ -665,31 +678,29 @@ public class TurnManager : NetworkBehaviour
             return false;
         }
 
-        if (_activeAbility == CharacterAbilityType.Manipulator)
-        {
-            return Server_TryUseManipulator();
-        }
-
-        // --- Lottery Winner (#5): claim lottery + apply ONE random manipulation to ONE chosen stock ---
-        if (_activeAbility == CharacterAbilityType.LotteryWinner)
-        {
-            return Server_TryUseLotteryWinner();
-        }
-
-        // --- Broker (#6): +1 buy/sell limits this turn AND apply ONE random manipulation to ONE chosen stock ---
-        if (_activeAbility == CharacterAbilityType.Broker)
-        {
-            return Server_TryUseBroker();
-        }
-
         if (_activeAbility == CharacterAbilityType.Blocker || _activeAbility == CharacterAbilityType.Thief)
         {
             return Server_TryUseBlockerOrThief();
         }
 
-        if (_activeAbility == CharacterAbilityType.TaxCollector)
+        if (_activeAbility == CharacterAbilityType.Trader)
         {
-            return Server_TryUseTaxCollector();
+            return Server_TryUseTrader();
+        }
+
+        if (_activeAbility == CharacterAbilityType.Manipulator)
+        {
+            return Server_TryUseManipulator();
+        }
+
+        if (_activeAbility == CharacterAbilityType.LotteryWinner)
+        {
+            return Server_TryUseLotteryWinner();
+        }
+
+        if (_activeAbility == CharacterAbilityType.Broker)
+        {
+            return Server_TryUseBroker();
         }
 
         if (_activeAbility == CharacterAbilityType.Gambler)
@@ -697,15 +708,50 @@ public class TurnManager : NetworkBehaviour
             return Server_TryUseGambler();
         }
 
-        // Non-targeted abilities (Trader, Inheritor)
-        var immediateUndo = PlayerManager.Instance.ExecuteAbilityWithUndo(ActivePlayerId, _activeAbility);
-
-        if (immediateUndo == null)
+        if (_activeAbility == CharacterAbilityType.TaxCollector)
         {
-            np?.TargetToast("Ability cannot be used now.");
-            return false;
+            return Server_TryUseTaxCollector();
         }
 
+        if (_activeAbility == CharacterAbilityType.Inheritor)
+        {
+            return Server_TryUseInheritor();
+        }
+
+        np?.TargetToast("Ability not implemented yet.");
+        return false;
+    }
+
+    [Server]
+    private bool Server_TryUseTrader()
+    {
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
+        if (np == null)
+            return false;
+
+        EnableTraderForThisTurn();
+
+        PushAbilityBarrier();
+        return true;
+    }
+
+    [Server]
+    private bool Server_TryUseInheritor()
+    {
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
+        if (np == null)
+            return false;
+
+        var stock = DeckManager.Instance.DrawRandomStock();
+        PlayerManager.Instance.AddStock(ActivePlayerId, stock, 1);
+
+        Server_SyncPlayerState(ActivePlayerId);
+
+        np.TargetToast($"You inherited 1 {stock}.");
+
+        // Ability consumed, no undo.
         PushAbilityBarrier();
         return true;
     }
@@ -1140,6 +1186,21 @@ public class TurnManager : NetworkBehaviour
     }
 
     [Server]
+    public void Server_SyncStockPrice(StockType stock)
+    {
+        int price = StockMarketManager.Instance.stockPrices[stock];
+        RpcSyncStockPrice(stock, price);
+    }
+
+    [ClientRpc]
+    private void RpcSyncStockPrice(StockType stock, int newPrice)
+    {
+        StockMarketManager.Instance.stockPrices[stock] = newPrice;
+
+        StockMarketManager.Instance.RaiseStockPriceChanged(stock, newPrice);
+    }
+
+    [Server]
     private void RequestStockTarget(int pickerPid, HashSet<StockType> candidates, string prompt, string confirmPrefix, Action<StockType> onChosen, Action onCancelled)
     {
         var nm = NetworkManager.singleton as CustomNetworkManager;
@@ -1353,10 +1414,12 @@ public class TurnManager : NetworkBehaviour
     public bool UndoLast()
     {
         if (ActivePlayerId < 0) return false;
+
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
+        
         if (_history.Count == 0)
         {
-            var nm = NetworkManager.singleton as CustomNetworkManager;
-            var np = nm?.GetPlayerByPid(ActivePlayerId);
             np?.TargetToast("Nothing to undo.");
             return false;
         }
@@ -1389,6 +1452,9 @@ public class TurnManager : NetworkBehaviour
                     PlayerManager.Instance.AddMoney(ActivePlayerId, payPrice);
                     StockMarketManager.Instance.RevertBuy(entry.stock); // price--
                     _buyUsed = Mathf.Max(0, _buyUsed - 1);
+
+                    Server_SyncPlayerState(ActivePlayerId);
+                    Server_SyncStockPrice(entry.stock);
                     break;
                 }
             case TurnActionType.Sell:
@@ -1399,6 +1465,9 @@ public class TurnManager : NetworkBehaviour
                         PlayerManager.Instance.AddStock(ActivePlayerId, entry.stock, 1);
                         PlayerManager.Instance.RemoveMoney(ActivePlayerId, gain);
                         StockMarketManager.Instance.RevertOpenSell(entry.stock); // price++
+
+                        Server_SyncPlayerState(ActivePlayerId);
+                        Server_SyncStockPrice(entry.stock);
                     }
                     else
                     {
@@ -1416,6 +1485,9 @@ public class TurnManager : NetworkBehaviour
             _lockedBuyPrice.Clear();
             _lockedSellPrice.Clear();
         }
+
+        bool canUndo = (_history.Count > 0);
+        np?.TargetSetUndoInteractable(canUndo);
 
         return true;
     }
@@ -1644,7 +1716,6 @@ public class TurnManager : NetworkBehaviour
         ResolvePendingManipulationsEndOfRound();
 
         // After manipulations, some stocks may hit 0 or 8
-        // Call your market checks (adjust to your API)
         StockMarketManager.Instance.CheckBankruptcyAndCeilingAll();
 
         // Remove the sold cards from players' hands
@@ -1660,8 +1731,22 @@ public class TurnManager : NetworkBehaviour
         // 3) End-of-round taxes (Tax Collector)
         ResolveTaxesEndOfRound();
 
-        // 4) (Optional) Toast / UI note
-        UIManager.Instance.ShowMessage("End of round resolved.");
+        for (int pid = 0; pid < PlayerManager.Instance.players.Count; pid++)
+        {
+            Server_SyncPlayerState(pid);
+        }
+
+        foreach (var kv in StockMarketManager.Instance.stockPrices)
+        {
+            Server_SyncStockPrice(kv.Key);
+        }
+
+        var nm = NetworkManager.singleton as CustomNetworkManager; //delete later
+        foreach (var p in PlayerManager.Instance.players)
+        {
+            var np = nm?.GetPlayerByPid(p.id);
+            np?.TargetToast("End of round resolved.");
+        }
     }
 
     [Server]

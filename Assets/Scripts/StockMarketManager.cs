@@ -87,7 +87,6 @@ public class StockMarketManager : MonoBehaviour
         CheckCeilingAfterBuy(stock, before); // << recordable path for Undo
     }
 
-
     // Immediate open sale: -1 and bankruptcy check
     public void SellStock(StockType stock, bool openSale)
     {
@@ -102,7 +101,6 @@ public class StockMarketManager : MonoBehaviour
         }
         // else: close sale handled at end of round via queue
     }
-
 
     // Queue a close sale to resolve end-of-round
     public void QueueCloseSale(int playerId, StockType stock, int anchoredGain)
@@ -141,6 +139,8 @@ public class StockMarketManager : MonoBehaviour
             {
                 int newPrice = Mathf.Clamp(cur - 1, minPrice, maxPrice);
                 stockPrices[cs.stock] = newPrice;
+
+                TurnManager.Instance.Server_SyncStockPrice(cs.stock);
                 OnStockPriceChanged?.Invoke(cs.stock, newPrice);
 
                 // Bankruptcy/Ceiling checks (ceiling rarely on -1, but kept for symmetry)
@@ -334,4 +334,10 @@ public class StockMarketManager : MonoBehaviour
         OnStockPriceChanged?.Invoke(stock, startingPrice);
         OnStockCeilingHit?.Invoke(stock);
     }
+
+    public void RaiseStockPriceChanged(StockType stock, int newPrice)
+    {
+        OnStockPriceChanged?.Invoke(stock, newPrice);
+    }
+
 }

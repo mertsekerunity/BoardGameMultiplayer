@@ -51,15 +51,17 @@ public class GameManager : NetworkBehaviour
 
         // Set up core systems
         StockMarketManager.Instance.SetupMarket(playerCount);
+        PlayerManager.Instance.Server_GiveInitialStocks(3);
         DeckManager.Instance.SetupDecks();
         TurnManager.Instance.SetupTurnOrder();
 
-        // Now all game data is ready -> tell clients to build UI
-        //RpcInitClientUI(playerCount);
-
         SendInitialPlayerSnapshotToClients();
 
-        // Start the first round
+        for (int pid = 0; pid < PlayerManager.Instance.players.Count; pid++)
+        {
+            TurnManager.Instance.Server_SyncPlayerState(pid);
+        }
+
         StartRound();
     }
 
@@ -136,9 +138,6 @@ public class GameManager : NetworkBehaviour
         TurnManager.Instance.SelectionFinished += OnSelectionFinished;
         TurnManager.Instance.StartCharacterSelectionPhase();
     }
-
-    // TurnManager.MainPhaseLoop (server) calls ResolveEndOfRound() and then:
-    // GameManager.Instance.EndRound();
 
     [Server]
     public void EndRound()

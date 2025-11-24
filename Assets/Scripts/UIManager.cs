@@ -56,6 +56,15 @@ public class UIManager : MonoBehaviour
     [SerializeField] private CharacterSelectionItem selectionItemPrefab;
     [SerializeField] private TextMeshProUGUI selectionPrompt; // “Player X, choose your character”
 
+    private class PendingPlayerState
+    {
+        public int money;
+        public Dictionary<StockType, int> stocks;
+    }
+
+    private Dictionary<int, PendingPlayerState> _pendingPlayerStates =
+        new Dictionary<int, PendingPlayerState>();
+
     private struct PendingSelection
     {
         public int pickerPid;
@@ -207,23 +216,26 @@ public class UIManager : MonoBehaviour
             var panel = Instantiate(playerPanelPrefab, playersPanelContainer);
 
             panel.Initialize(pid, nm, isLocal);
-            panel.UpdateMoney(cash);
-
-            if (isLocal)
-            {
-                //panel.UpdateStocks(pData.stocks);
-                // Stocks: we’ll hook proper syncing later
-                panel.UpdateStocks(new Dictionary<StockType, int>());
-            }
-                
             _playerPanels[pid] = panel;
-        }
 
-        //// Make sure interactivity respects local id
-        //if (_localPlayerId >= 0)
-        //{
-        //    SetLocalPlayerId(_localPlayerId);
-        //}
+            if (_pendingPlayerStates.TryGetValue(pid, out var pending))
+            {
+                panel.UpdateMoney(pending.money);
+                panel.UpdateStocks(pending.stocks);
+                _pendingPlayerStates.Remove(pid);
+            }
+            else
+            {
+                panel.UpdateMoney(cash);
+
+                if (isLocal)
+                {
+                    //panel.UpdateStocks(pData.stocks);
+                    // Stocks: we’ll hook proper syncing later
+                    panel.UpdateStocks(new Dictionary<StockType, int>());
+                }
+            }
+        }
     }
 
     public void CreateMarketRows()
@@ -968,6 +980,14 @@ public class UIManager : MonoBehaviour
         {
             panel.UpdateMoney(money);
             panel.UpdateStocks(stocks);
+        }
+        else
+        {
+            _pendingPlayerStates[pid] = new PendingPlayerState
+            {
+                money = money,
+                stocks = new Dictionary<StockType, int>(stocks)
+            };
         }
     }
 
