@@ -19,8 +19,10 @@ public class DeckManager : MonoBehaviour
     private List<TaxType> _taxRuntime;
 
     // Lottery
-    [SerializeField] private int lotteryPool = 2;
-    [SerializeField] private int lotteryIncreaseAmount = 2;
+    [SerializeField] int lotteryPool = 0;
+    [SerializeField] int lotteryIncreaseAmount = 2;
+
+    public int LotteryPool => lotteryPool;
 
     // Events for UI or game logic
     public event Action<ManipulationType> OnManipulationCardDrawn;

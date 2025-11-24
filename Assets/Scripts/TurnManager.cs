@@ -53,6 +53,7 @@ public class TurnManager : NetworkBehaviour
 
     private int _biddingCurrentPid = -1;
     private readonly Dictionary<int, int> _playerBids = new(); // pid -> amount
+    private Dictionary<int, int> _bidTakenByAmount = new Dictionary<int, int>();
 
     public event Action<int, ManipulationType, StockType> OnManipulationQueuedUI;
     public event Action<int, ManipulationType, StockType> OnManipulationRemovedUI;
@@ -105,6 +106,22 @@ public class TurnManager : NetworkBehaviour
 
     public int BiddingCurrentPid => _biddingCurrentPid;
 
+    private readonly int[] _bidOptionAmounts = new int[]
+    {
+        -1, // slot 0
+        -1, // slot 1
+         0, // slot 2
+         0, // slot 3
+         1, // slot 4
+         3, // slot 5
+         5, // slot 6
+         7, // slot 7
+        10  // slot 8
+    };
+
+    private readonly Dictionary<int, int> _bidTakenBySlot = new Dictionary<int, int>(); // (slotIndex -> pid)
+
+    private float _biddingPanelCloseTimer = 4f;
     public List<int> biddingOrder { get; private set; }
     public List<int> selectionOrder { get; private set; }
     public Dictionary<CharacterCardSO, int> characterAssignments { get; private set; }
@@ -197,6 +214,10 @@ public class TurnManager : NetworkBehaviour
 
         biddingOrder = PlayerManager.Instance.players.OrderBy(p => p.money).Select(p => p.id).ToList();
 
+        _playerBids.Clear();
+        _bidTakenBySlot.Clear();
+        _bidTakenByAmount.Clear();
+
         // tell all clients to reset their bidding UI
         RpcBiddingReset(PlayerManager.Instance.players.Count);
 
@@ -248,6 +269,9 @@ public class TurnManager : NetworkBehaviour
             .ThenBy(_ => UnityEngine.Random.value)
             .Select(kv => kv.Key)
             .ToList();
+
+        // wait before closing panel
+        yield return new WaitForSeconds(_biddingPanelCloseTimer);
 
         // hide panel on all clients
         RpcBiddingClose();
@@ -1039,6 +1063,7 @@ public class TurnManager : NetworkBehaviour
         PlayerManager.Instance.AddMoney(ActivePlayerId, payout);
 
         Server_SyncPlayerState(ActivePlayerId);
+        GameManager.Instance.Server_SyncRoundAndLottery();
 
         var m = GetOrCreateSingleManip(ActivePlayerId);
 
@@ -1763,26 +1788,47 @@ public class TurnManager : NetworkBehaviour
     public void MarkStolenThisRound(int characterNumber) => _stolenCharacters.Add(characterNumber);
 
     [Server]
-    public void SubmitBid_Server(int pid, int amount)
+    public void SubmitBid_Server(int pid, int slotIndex)
     {
-        // Validate it's currently that pid's bidding turn
-        if (pid != _biddingCurrentPid) return;
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(pid);
+
+        if (!_biddingWaiting || pid != _biddingCurrentPid)
+        {
+            np?.TargetToast("Not your bidding turn.");
+            return;
+        }
+
+        if (slotIndex < 0 || slotIndex >= _bidOptionAmounts.Length)
+        {
+            np?.TargetToast("Invalid bid option.");
+            return;
+        }
+
+        if (_bidTakenBySlot.TryGetValue(slotIndex, out var existingPid) && existingPid != pid)
+        {
+            np?.TargetToast("That option is already taken.");
+            return;
+        }
 
         var p = PlayerManager.Instance.players.First(pp => pp.id == pid);
 
+        if (p == null)
+        {
+            np?.TargetToast("Unknown player.");
+            return;
+        }
+
+        int amount = _bidOptionAmounts[slotIndex];
+
         if (amount > 0 && p.money < amount)
         {
-            // use CustomNetworkManager’s lookup
-            var cnm = NetworkManager.singleton as CustomNetworkManager;
-            var np = cnm?.GetPlayerByPid(pid);
-            if (np != null)
-            {
-                np.TargetToast("Not enough money for that bid.");
-            }
+            np.TargetToast("Not enough money for that bid.");
                 
             return; //keep waiting
         }
 
+        _bidTakenBySlot[slotIndex] = pid;
         _playerBids[pid] = amount;
 
         if (amount > 0)
@@ -1796,7 +1842,17 @@ public class TurnManager : NetworkBehaviour
             _bidSpendTotal[pid] = (_bidSpendTotal.TryGetValue(pid, out var cur) ? cur : 0) - amount;
         }
 
+        Server_SyncPlayerState(pid);
+
+        RpcOnBidChosen(pid, slotIndex, amount);
+
         _biddingWaiting = false;
+    }
+
+    [ClientRpc]
+    private void RpcOnBidChosen(int pid, int slotIndex, int amount)
+    {
+        UIManager.Instance.Bidding_MarkChoice(pid, slotIndex, amount);
     }
 
     [Server]

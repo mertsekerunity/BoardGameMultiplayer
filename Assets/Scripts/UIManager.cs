@@ -20,6 +20,7 @@ public class UIManager : MonoBehaviour
     [SerializeField] private Transform marketPanelContainer;
     [SerializeField] private MarketRow marketRowPrefab;
 
+    [SerializeField] private TextMeshProUGUI roundText;
     [SerializeField] private TextMeshProUGUI lotteryText;
 
     [SerializeField] private Image characterImage;
@@ -55,6 +56,8 @@ public class UIManager : MonoBehaviour
     [SerializeField] private Transform characterSelectionPanel;   // grid/vertical group
     [SerializeField] private CharacterSelectionItem selectionItemPrefab;
     [SerializeField] private TextMeshProUGUI selectionPrompt; // “Player X, choose your character”
+
+    private Dictionary<int, string> _playerNames = new Dictionary<int, string>();
 
     private class PendingPlayerState
     {
@@ -116,7 +119,7 @@ public class UIManager : MonoBehaviour
         DeckManager.Instance.OnManipulationCardDrawn += ShowManipulationCard;
         DeckManager.Instance.OnTaxCardDrawn += ShowTaxCard;
         DeckManager.Instance.OnDecksReshuffled += RefreshDeckUI;
-        DeckManager.Instance.OnLotteryChanged += HandleLotteryChanged;
+        //DeckManager.Instance.OnLotteryChanged += HandleLotteryChanged; SP usage, not used in MP
         TurnManager.Instance.OnManipulationQueuedUI += HandleManipQueued;
         TurnManager.Instance.OnManipulationRemovedUI += HandleManipRemoved;
         TurnManager.Instance.OnProtectionChosenUI += HandleProtectionChosen;
@@ -142,7 +145,7 @@ public class UIManager : MonoBehaviour
             DeckManager.Instance.OnManipulationCardDrawn -= ShowManipulationCard;
             DeckManager.Instance.OnTaxCardDrawn -= ShowTaxCard;
             DeckManager.Instance.OnDecksReshuffled -= RefreshDeckUI;
-            DeckManager.Instance.OnLotteryChanged -= HandleLotteryChanged;
+            //DeckManager.Instance.OnLotteryChanged -= HandleLotteryChanged; SP usage, not used in MP
         }
         if (TurnManager.Instance != null)
         {
@@ -216,7 +219,9 @@ public class UIManager : MonoBehaviour
             var panel = Instantiate(playerPanelPrefab, playersPanelContainer);
 
             panel.Initialize(pid, nm, isLocal);
+
             _playerPanels[pid] = panel;
+            _playerNames[pid] = nm;
 
             if (_pendingPlayerStates.TryGetValue(pid, out var pending))
             {
@@ -430,9 +435,14 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    public void HandleLotteryChanged(int amount)
+    public void SetLotteryAmount(int amount)
     {
-        lotteryText.text = $"{amount}$";
+        lotteryText.text = amount.ToString();
+    }
+
+    public void SetRoundNumber(int round)
+    {
+        roundText.text = round.ToString();
     }
 
     public void OnUndoButton()
@@ -529,7 +539,7 @@ public class UIManager : MonoBehaviour
     {
         if (!biddingPanel) return;
 
-        biddingPanel.BeginTurn(playerName, playerMoney, (amount) =>
+        biddingPanel.BeginTurn(playerName, playerMoney, (slotIndex) =>
         {
             var lp = LocalNetPlayer;
             if (lp == null)
@@ -537,8 +547,27 @@ public class UIManager : MonoBehaviour
                 ShowMessage("No local network player.");
                 return;
             }
-            lp.CmdSubmitBid(amount);
+            lp.CmdSubmitBid(slotIndex);
         });
+    }
+
+    public void Bidding_MarkChoice(int pid, int slotIndex, int amount)
+    {
+        if (!biddingPanel) return;
+
+        string name;
+
+        if (_playerNames != null && _playerNames.TryGetValue(pid, out var storedName) && !string.IsNullOrEmpty(storedName))
+        {
+            name = storedName;
+        }
+
+        else
+        {
+            name = $"Player {pid + 1}";
+        }
+
+        biddingPanel.MarkChoice(pid, slotIndex, name);
     }
 
     public void Bidding_Close()
@@ -550,14 +579,24 @@ public class UIManager : MonoBehaviour
 
     public void SetBidActivePlayer(int playerId)
     {
+        string pName;
+
         foreach (var kv in _playerPanels)
+        {
             kv.Value.SetActiveHighlight(kv.Key == playerId);
-            var pName = PlayerManager.Instance.players.First(p => p.id == playerId).playerName;
-            if (biddingOrderPrompt != null)
-                {
-                biddingOrderPrompt.gameObject.SetActive(true);
-                biddingOrderPrompt.text = $"{pName}, make a bid";
-                }
+        }
+
+        if (biddingOrderPrompt != null)
+        {
+            biddingOrderPrompt.gameObject.SetActive(true);
+
+            if (!_playerNames.TryGetValue(playerId, out pName) || string.IsNullOrEmpty(pName))
+            {
+                pName = $"Player {playerId + 1}";
+            }
+
+            biddingOrderPrompt.text = $"{pName}, make a bid";
+        }
     }
 
     public void ClearAllHighlights()

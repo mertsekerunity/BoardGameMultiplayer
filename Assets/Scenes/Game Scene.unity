@@ -1727,7 +1727,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 995341725dbd6544db37e659d7e566a9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  lotteryPool: 2
+  lotteryPool: 0
   lotteryIncreaseAmount: 2
 --- !u!1 &277256620
 GameObject:
@@ -2736,7 +2736,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 60, y: 40}
+  m_AnchoredPosition: {x: 55, y: 40}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &607043942
@@ -3752,12 +3752,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c7d911bf61801104e8406be0044a4834, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  debugShowManipToAll: 0
   globalPrompt: {fileID: 1005455592}
   playersPanelContainer: {fileID: 1242649519}
   playerPanelPrefab: {fileID: 8233940229131650173, guid: 998ac72ca3873d941b93380b2f74feae, type: 3}
   marketPanelContainer: {fileID: 1905881028}
   marketRowPrefab: {fileID: 1992281930068989524, guid: f644e6012a752f740949fb87c071b8ed, type: 3}
+  roundText: {fileID: 1543413786}
   lotteryText: {fileID: 2051829984}
   characterImage: {fileID: 1496146254}
   characterTargetPanel: {fileID: 473681173}
@@ -4574,46 +4574,55 @@ MonoBehaviour:
     amount: -1
     requiresAtLeast5Players: 1
     taken: 0
+    slotIndex: 0
   - button: {fileID: 770374138}
     chosenByLabel: {fileID: 1863797483}
     amount: -1
     requiresAtLeast5Players: 0
     taken: 0
+    slotIndex: 0
   - button: {fileID: 1867723394}
     chosenByLabel: {fileID: 1230422467}
     amount: 0
     requiresAtLeast5Players: 0
     taken: 0
+    slotIndex: 0
   - button: {fileID: 1083799066}
     chosenByLabel: {fileID: 986086787}
     amount: 0
     requiresAtLeast5Players: 0
     taken: 0
+    slotIndex: 0
   - button: {fileID: 978548873}
     chosenByLabel: {fileID: 695555093}
     amount: 1
     requiresAtLeast5Players: 0
     taken: 0
+    slotIndex: 0
   - button: {fileID: 768927898}
     chosenByLabel: {fileID: 277256622}
     amount: 3
     requiresAtLeast5Players: 0
     taken: 0
+    slotIndex: 0
   - button: {fileID: 844381240}
     chosenByLabel: {fileID: 58782895}
     amount: 5
     requiresAtLeast5Players: 0
     taken: 0
+    slotIndex: 0
   - button: {fileID: 1267653690}
     chosenByLabel: {fileID: 1085033349}
     amount: 7
     requiresAtLeast5Players: 0
     taken: 0
+    slotIndex: 0
   - button: {fileID: 1225723224}
     chosenByLabel: {fileID: 1061093125}
     amount: 10
     requiresAtLeast5Players: 0
     taken: 0
+    slotIndex: 0
 --- !u!1 &897323184
 GameObject:
   m_ObjectHideFlags: 0
@@ -6537,7 +6546,6 @@ MonoBehaviour:
   syncMode: 0
   syncInterval: 0
   requiredPlayers: 2
-  roundText: {fileID: 1543413786}
   winnerText: {fileID: 374334752}
 --- !u!114 &1190302175
 MonoBehaviour:
@@ -8051,7 +8059,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 60, y: -75}
+  m_AnchoredPosition: {x: 55, y: -75}
   m_SizeDelta: {x: 200, y: 300}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1496146254
@@ -10053,7 +10061,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 60, y: 195}
+  m_AnchoredPosition: {x: 55, y: 195}
   m_SizeDelta: {x: 100, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &2000791731

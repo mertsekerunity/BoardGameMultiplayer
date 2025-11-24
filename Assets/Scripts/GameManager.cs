@@ -15,7 +15,6 @@ public class GameManager : NetworkBehaviour
 
     private int currentRound = 1;
 
-    [SerializeField] private TextMeshProUGUI roundText;
     [SerializeField] private TextMeshProUGUI winnerText;
 
     private void Awake()
@@ -121,7 +120,7 @@ public class GameManager : NetworkBehaviour
     [Server]
     public void StartRound()
     {
-        roundText.text = currentRound.ToString();
+        DeckManager.Instance.IncreaseLottery();
         TurnManager.Instance.RoundStartReset();
         TurnManager.Instance.StartDiscardPhase();
 
@@ -130,12 +129,13 @@ public class GameManager : NetworkBehaviour
             TurnManager.Instance.BiddingFinished -= OnBiddingFinished;
             TurnManager.Instance.BiddingFinished += OnBiddingFinished;
             TurnManager.Instance.StartBiddingPhase();
-            DeckManager.Instance.IncreaseLottery();
+            Server_SyncRoundAndLottery();
             return;
         }
-
+        
         TurnManager.Instance.SelectionFinished -= OnSelectionFinished;
         TurnManager.Instance.SelectionFinished += OnSelectionFinished;
+        Server_SyncRoundAndLottery();
         TurnManager.Instance.StartCharacterSelectionPhase();
     }
 
@@ -223,5 +223,21 @@ public class GameManager : NetworkBehaviour
     {
         TurnManager.Instance.SelectionFinished -= OnSelectionFinished;
         TurnManager.Instance.StartMainPhase();
+    }
+
+    [Server]
+    public void Server_SyncRoundAndLottery()
+    {
+        int round = currentRound;
+        int lottery = DeckManager.Instance.LotteryPool;
+
+        RpcSyncRoundAndLottery(round, lottery);
+    }
+
+    [ClientRpc]
+    private void RpcSyncRoundAndLottery(int round, int lottery)
+    {
+        UIManager.Instance.SetRoundNumber(round);
+        UIManager.Instance.SetLotteryAmount(lottery);
     }
 }

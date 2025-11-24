@@ -105,9 +105,9 @@ public class NetPlayer : NetworkBehaviour
     }
 
     [Command]
-    public void CmdSubmitBid(int amount)
+    public void CmdSubmitBid(int slotIndex)
     {
-        TurnManager.Instance.SubmitBid_Server(pid, amount);
+        TurnManager.Instance.SubmitBid_Server(pid, slotIndex);
     }
 
     [Command]
