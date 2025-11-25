@@ -112,7 +112,6 @@ public class UIManager : MonoBehaviour
         SetUndoButtonInteractable(false);
 
         // Subscribe to events
-        PlayerManager.Instance.OnPendingCloseChanged += HandlePendingCloseChanged;
         PlayerManager.Instance.OnMoneyChanged += HandleMoneyChanged;
         PlayerManager.Instance.OnStocksChanged += HandleStocksChanged;
         StockMarketManager.Instance.OnStockPriceChanged += HandlePriceChanged;
@@ -121,7 +120,6 @@ public class UIManager : MonoBehaviour
         DeckManager.Instance.OnManipulationCardDrawn += ShowManipulationCard;
         DeckManager.Instance.OnTaxCardDrawn += ShowTaxCard;
         DeckManager.Instance.OnDecksReshuffled += RefreshDeckUI;
-        //DeckManager.Instance.OnLotteryChanged += HandleLotteryChanged; SP usage, not used in MP
         TurnManager.Instance.OnManipulationQueuedUI += HandleManipQueued;
         TurnManager.Instance.OnManipulationRemovedUI += HandleManipRemoved;
         TurnManager.Instance.OnProtectionChosenUI += HandleProtectionChosen;
@@ -131,7 +129,6 @@ public class UIManager : MonoBehaviour
     {
         if (PlayerManager.Instance != null)
         {
-            PlayerManager.Instance.OnPendingCloseChanged -= HandlePendingCloseChanged;
             PlayerManager.Instance.OnMoneyChanged -= HandleMoneyChanged;
             PlayerManager.Instance.OnStocksChanged -= HandleStocksChanged;
         }
@@ -147,7 +144,6 @@ public class UIManager : MonoBehaviour
             DeckManager.Instance.OnManipulationCardDrawn -= ShowManipulationCard;
             DeckManager.Instance.OnTaxCardDrawn -= ShowTaxCard;
             DeckManager.Instance.OnDecksReshuffled -= RefreshDeckUI;
-            //DeckManager.Instance.OnLotteryChanged -= HandleLotteryChanged; SP usage, not used in MP
         }
         if (TurnManager.Instance != null)
         {
@@ -1028,12 +1024,13 @@ public class UIManager : MonoBehaviour
 
         SetLocalPlayerId(pid);
     }
-    public void SyncPlayerState(int pid, int money, Dictionary<StockType, int> stocks)
+    public void SyncPlayerState(int pid, int money, Dictionary<StockType, int> stocks, Dictionary<StockType, int> pendingClose)
     {
         if (_playerPanels.TryGetValue(pid, out var panel))
         {
             panel.UpdateMoney(money);
             panel.UpdateStocks(stocks);
+            panel.UpdatePendingClose(pendingClose);
         }
         else
         {

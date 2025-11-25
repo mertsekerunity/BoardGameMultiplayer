@@ -189,6 +189,18 @@ public class PlayerPanel : MonoBehaviour
         blueStockText.text = stocks.TryGetValue(StockType.Blue, out var b) ? b.ToString() : "0";
     }
 
+    public void UpdatePendingClose(Dictionary<StockType, int> pending)
+    {
+        ClearPendingCloseAll();
+
+        if (pending == null) return;
+
+        foreach (var kv in pending)
+        {
+            UpdatePendingClose(kv.Key, kv.Value);
+        }
+    }
+
     public void UpdatePendingClose(StockType stock, int count)
     {
         TextMeshProUGUI t = stock switch
@@ -200,8 +212,16 @@ public class PlayerPanel : MonoBehaviour
             _ => null
         };
         if (t == null) return;
-        if (count <= 0) t.gameObject.SetActive(false);
-        else { t.gameObject.SetActive(true); t.text = $"({count})"; }
+
+        if (count <= 0)
+        {
+            t.gameObject.SetActive(false);
+        }
+        else
+        {
+            t.gameObject.SetActive(true); 
+            t.text = $"({count})";
+        }
     }
 
     public void ClearPendingCloseAll()

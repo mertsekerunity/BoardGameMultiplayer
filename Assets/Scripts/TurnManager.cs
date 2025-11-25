@@ -666,6 +666,8 @@ public class TurnManager : NetworkBehaviour
             // Mark pending in PM (no card removal, no money now)
             // IMPORTANT: PlayerManager.TrySellStock(..., false) should NOT queue to market or remove a card.
             bool ok = PlayerManager.Instance.TrySellStock(ActivePlayerId, stock, openSale: false);
+
+            Server_SyncPlayerState(ActivePlayerId);
             if (!ok) return false;
 
             // Queue market payout at the anchored price; price tick happens at end-of-round
@@ -1188,7 +1190,7 @@ public class TurnManager : NetworkBehaviour
     }
 
     [ClientRpc]
-    private void RpcSyncPlayerState(int pid, int money, int[] stockTypeIds, int[] stockCounts)
+    private void RpcSyncPlayerState(int pid, int money, int[] stockTypeIds, int[] stockCounts, int[] pendingStockTypeIds, int[] pendingCounts)
     {
         var stocks = new Dictionary<StockType, int>();
 
@@ -1197,7 +1199,23 @@ public class TurnManager : NetworkBehaviour
             stocks[(StockType)stockTypeIds[i]] = stockCounts[i];
         }
 
-        UIManager.Instance.SyncPlayerState(pid, money, stocks);
+        var pending = new Dictionary<StockType, int>();
+        for (int i = 0; i < pendingStockTypeIds.Length && i < pendingCounts.Length; i++)
+        {
+            pending[(StockType)pendingStockTypeIds[i]] = pendingCounts[i];
+        }
+
+        var display = new Dictionary<StockType, int>();
+
+        foreach (var stock in StockMarketManager.Instance.availableStocks)
+        {
+            int ownedCount = stocks.TryGetValue(stock, out var c) ? c : 0;
+            int pendingCount = pending.TryGetValue(stock, out var p) ? p : 0;
+
+            display[stock] = Mathf.Max(0, ownedCount - pendingCount);
+        }
+
+        UIManager.Instance.SyncPlayerState(pid, money, display, pending);
     }
 
     [Server]
@@ -1209,7 +1227,12 @@ public class TurnManager : NetworkBehaviour
         int[] stockIds = owned.Select(kv => (int)kv.Key).ToArray();
         int[] stockCounts = owned.Select(kv => kv.Value).ToArray();
 
-        RpcSyncPlayerState(pid, pl.money, stockIds, stockCounts);
+        var pendingDict = PlayerManager.Instance.GetPendingCloseDict(pid);
+        var pendingList = pendingDict?.Where(kv => kv.Value > 0).ToList();
+        int[] pendingIds = pendingList.Select(kv => (int)kv.Key).ToArray();
+        int[] pendingCounts = pendingList.Select(kv => kv.Value).ToArray();
+
+        RpcSyncPlayerState(pid, pl.money, stockIds, stockCounts, pendingIds, pendingCounts);
     }
 
     [Server]
@@ -1511,6 +1534,8 @@ public class TurnManager : NetworkBehaviour
                     {
                         PlayerManager.Instance.CancelPendingCloseSell(ActivePlayerId, entry.stock, 1);
                         StockMarketManager.Instance.RemoveQueuedCloseSale(ActivePlayerId, entry.stock, entry.unitPrice);
+
+                        Server_SyncPlayerState(ActivePlayerId);
                     }
                     _sellUsed = Mathf.Max(0, _sellUsed - 1);
                     break;
@@ -1769,15 +1794,8 @@ public class TurnManager : NetworkBehaviour
         // 3) End-of-round taxes (Tax Collector)
         ResolveTaxesEndOfRound();
 
-        for (int pid = 0; pid < PlayerManager.Instance.players.Count; pid++)
-        {
-            Server_SyncPlayerState(pid);
-        }
-
-        foreach (var kv in StockMarketManager.Instance.stockPrices)
-        {
-            Server_SyncStockPrice(kv.Key);
-        }
+        Server_SyncAllPlayers();
+        Server_SyncAllStocks();
 
         var nm = NetworkManager.singleton as CustomNetworkManager; //delete later
         foreach (var p in PlayerManager.Instance.players)
@@ -1937,6 +1955,26 @@ public class TurnManager : NetworkBehaviour
         }
 
         UIManager.Instance.RevealRoundManipTagsForAll(list);
+    }
+
+    [Server]
+    public void Server_SyncAllPlayers()
+    {
+        var pm = PlayerManager.Instance;
+        foreach (var pl in pm.players)
+        {
+            Server_SyncPlayerState(pl.id);
+        }
+    }
+
+    [Server]
+    public void Server_SyncAllStocks()
+    {
+        var sm = StockMarketManager.Instance;
+        foreach (var s in sm.availableStocks)
+        {
+            Server_SyncStockPrice(s);
+        }
     }
 
     [Server]

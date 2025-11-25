@@ -321,6 +321,16 @@ public class PlayerManager : MonoBehaviour
         }
     }
 
+    public Dictionary<StockType, int> GetPendingCloseDict(int pid)
+    {
+        if (_pendingCloseSells.TryGetValue(pid, out var inner))
+        {
+            return new Dictionary<StockType, int>(inner);
+        }
+
+        return new Dictionary<StockType, int>();
+    }
+
     public void SettleRemainingHoldingsToCash()
     {
         foreach (var p in players)
