@@ -169,7 +169,7 @@ public class TurnManager : NetworkBehaviour
             return;
         }
         Instance = this;
-        //DontDestroyOnLoad(transform.root.gameObject);
+        //DontDestroyOnLoad(transform.root.gameObject); //didnt work with mirror, still dont know why.
     }
 
     [Server]
@@ -359,6 +359,8 @@ public class TurnManager : NetworkBehaviour
         int pid = characterAssignments[card];
         ActivePlayerId = pid;
 
+        ResolveThiefPayoutsForVictim(pid);
+
         int cardId = (int)card.characterNumber;
 
         RpcShowActiveCharacter(pid, cardId);
@@ -485,9 +487,6 @@ public class TurnManager : NetworkBehaviour
 
         int cardId = (int)card.characterNumber;
         RpcHideActiveCharacter(ActivePlayerId, cardId);
-
-        // if the active character was Thief, pay now
-        ResolveThiefPayoutsFor(ActivePlayerId);
 
         _history.Clear(); // can’t undo previous player’s actions
 
@@ -753,6 +752,54 @@ public class TurnManager : NetworkBehaviour
     }
 
     [Server]
+    private bool Server_TryUseBlocker(int actingPid, int targetCharacterNumber)
+    {
+        if (IsCharacterBlocked(targetCharacterNumber))
+            return false;
+
+        var ownerPidOpt = GetPidByCharacterNumber(targetCharacterNumber);
+        if (ownerPidOpt == null)
+            return false;
+
+        if (ownerPidOpt.Value == actingPid)
+            return false;
+
+        BlockCharacter(targetCharacterNumber);
+
+        Debug.Log($"[BLOCKER] #{targetCharacterNumber} is now blocked.");
+        return true;
+    }
+
+    [Server]
+    private bool Server_TryUseThief(int actingPid, int targetCharacterNumber)
+    {
+        if (targetCharacterNumber == 1) //cant target blocker #1
+            return false;
+
+        if (IsCharacterBlocked(targetCharacterNumber)) //cant steal from blocked target
+            return false;
+
+        if (GetPidByCharacterNumber(targetCharacterNumber) is not int victimPid)
+            return false;
+
+        if (victimPid == actingPid)
+            return false;
+
+        MarkStolenThisRound(targetCharacterNumber);
+
+        int victimMoney = PlayerManager.Instance.players[victimPid].money;
+        int stealAmount = (int)Mathf.Floor((float)victimMoney / 2f);
+
+        if (stealAmount <= 0)
+            return false;
+
+        ScheduleThiefPayout(thiefPid: actingPid, victimPid: victimPid, amount: stealAmount);
+
+        Debug.Log($"[THIEF] P{actingPid} will steal {stealAmount}$ from P{victimPid} at end of round.");
+        return true;
+    }
+
+    [Server]
     private bool Server_TryUseTrader()
     {
         var nm = NetworkManager.singleton as CustomNetworkManager;
@@ -974,8 +1021,16 @@ public class TurnManager : NetworkBehaviour
         ability: _activeAbility,
         onChosen: chosenNum =>
         {
-            var ok = PlayerManager.Instance
-                .ExecuteAbility_Targeted(ActivePlayerId, _activeAbility, chosenNum);
+            bool ok = false;
+
+            if (_activeAbility == CharacterAbilityType.Blocker)
+            {
+                ok = Server_TryUseBlocker(ActivePlayerId, chosenNum);
+            }
+            else if (_activeAbility == CharacterAbilityType.Thief)
+            {
+                ok = Server_TryUseThief(ActivePlayerId, chosenNum);
+            }
 
             if (!ok)
             {
@@ -983,7 +1038,7 @@ public class TurnManager : NetworkBehaviour
                 return;
             }
 
-            PushAbilityBarrier(undo: null);
+            PushAbilityBarrier();
         },
         onCancelled: () =>
         {
@@ -1562,20 +1617,17 @@ public class TurnManager : NetworkBehaviour
     }
 
     [Server]
-    public void UnscheduleThiefPayout(int thiefPid, int victimPid, int amount)
+    private void ResolveThiefPayoutsForVictim(int victimPid)
     {
-        int idx = _pendingThief.FindIndex(t =>
-            t.thiefPid == thiefPid && t.victimPid == victimPid && t.amount == amount);
-        if (idx >= 0) _pendingThief.RemoveAt(idx);
-    }
+        if (_pendingThief == null || _pendingThief.Count == 0)
+            return;
 
-    [Server]
-    private void ResolveThiefPayoutsFor(int thiefPid)
-    {
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+
         for (int i = _pendingThief.Count - 1; i >= 0; i--)
         {
             var t = _pendingThief[i];
-            if (t.thiefPid != thiefPid) continue;
+            if (t.victimPid != victimPid) continue;
 
             int available = PlayerManager.Instance.players[t.victimPid].money;
             int transfer = Mathf.Min(available, t.amount);
@@ -1583,6 +1635,18 @@ public class TurnManager : NetworkBehaviour
             {
                 PlayerManager.Instance.RemoveMoney(t.victimPid, transfer);
                 PlayerManager.Instance.AddMoney(t.thiefPid, transfer);
+
+                var thiefNp = nm?.GetPlayerByPid(t.thiefPid);
+                var victimNp = nm?.GetPlayerByPid(t.victimPid);
+
+                string thiefName = PlayerManager.Instance.players[t.thiefPid].playerName;
+                string victimName = PlayerManager.Instance.players[t.victimPid].playerName;
+
+                thiefNp?.TargetToast($"You stole {transfer}$ from {victimName}.");
+                victimNp?.TargetToast($"{thiefName} stole {transfer}$ from you.");
+
+                TurnManager.Instance.Server_SyncPlayerState(t.thiefPid);
+                TurnManager.Instance.Server_SyncPlayerState(t.victimPid);
             }
             _pendingThief.RemoveAt(i);
         }

@@ -34,7 +34,7 @@ public class PlayerManager : MonoBehaviour
             return;
         }
         Instance = this;
-        //DontDestroyOnLoad(transform.root.gameObject);
+        //DontDestroyOnLoad(transform.root.gameObject); //didnt work with mirror, still dont know why.
     }
 
     public Player RegisterNetworkPlayer(int pid, string name = null)
@@ -261,63 +261,6 @@ public class PlayerManager : MonoBehaviour
                 OnPendingCloseChanged?.Invoke(playerId, stock, map.TryGetValue(stock, out var left) ? left : 0);
             }
             if (map.Count == 0) _pendingCloseSells.Remove(playerId);
-        }
-    }
-
-    public bool ExecuteAbility_Targeted(int actingPid, CharacterAbilityType ability, int chosenNum)
-    {
-        var undo = ExecuteAbilityWithUndo_Targeted(actingPid, ability, chosenNum);
-        return (undo != null);
-    }
-
-    public Action ExecuteAbilityWithUndo_Targeted(int playerId, CharacterAbilityType abilityType, int targetCharacterNumber)
-    {
-        switch (abilityType)
-        {
-            case CharacterAbilityType.Blocker: // #1
-                {
-                    // validate
-                    if (TurnManager.Instance.IsCharacterBlocked(targetCharacterNumber))
-                        return null;
-                    if (TurnManager.Instance.GetPidByCharacterNumber(targetCharacterNumber) == null)
-                        return null;
-
-                    TurnManager.Instance.BlockCharacter(targetCharacterNumber);
-                    
-                    Debug.Log($"#{targetCharacterNumber} is blocked."); // REMOVE LATER !!!
-
-                    return () => TurnManager.Instance.UnblockCharacter(targetCharacterNumber);
-                }
-
-            case CharacterAbilityType.Thief: // #2
-                {
-                    if (targetCharacterNumber == 1) return null; // cannot target Blocker
-                    if (TurnManager.Instance.IsCharacterBlocked(targetCharacterNumber)) return null;
-                    if (TurnManager.Instance.GetPidByCharacterNumber(targetCharacterNumber) is not int victimPid)
-                        return null;
-
-                    // cannot steal from self
-                    if (victimPid == playerId) return null;
-
-                    // mark stolen so Blocker can’t later pick the same number
-                    TurnManager.Instance.MarkStolenThisRound(targetCharacterNumber);
-
-                    int victimMoney = PlayerManager.Instance.players[victimPid].money;
-                    int stealAmount = victimMoney / 2;
-
-                    TurnManager.Instance.ScheduleThiefPayout(thiefPid: playerId, victimPid: victimPid, amount: stealAmount);
-
-                    return () =>
-                    {
-                        TurnManager.Instance.UnscheduleThiefPayout(playerId, victimPid, stealAmount);
-                        // optional: unmark; usually not needed because round reset clears it
-                        // (kept consistent in case you add mid-round retargeting later)
-                        // TurnManager.Instance.UnmarkStolenThisRound(targetCharacterNumber);
-                    };
-                }
-
-            default:
-                return null;
         }
     }
 

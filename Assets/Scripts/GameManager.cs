@@ -24,7 +24,7 @@ public class GameManager : NetworkBehaviour
             return;
         }
         Instance = this;
-        //DontDestroyOnLoad(transform.root.gameObject);
+        //DontDestroyOnLoad(transform.root.gameObject); //didnt work with mirror, still dont know why.
     }
 
     [Server]
@@ -135,6 +135,7 @@ public class GameManager : NetworkBehaviour
         TurnManager.Instance.SelectionFinished -= OnSelectionFinished;
         TurnManager.Instance.SelectionFinished += OnSelectionFinished;
         Server_SyncRoundAndLottery();
+        Server_SyncHideMarketTags();
         TurnManager.Instance.StartCharacterSelectionPhase();
     }
 
@@ -144,7 +145,6 @@ public class GameManager : NetworkBehaviour
         // Cleanup round-specific data
         TurnManager.Instance.CleanupRound();
         DeckManager.Instance.CleanupRound();
-        UIManager.Instance.ClearAllMarketSecretTags();
 
         // Advance round counter and begin the next round
         currentRound++;
@@ -156,6 +156,7 @@ public class GameManager : NetworkBehaviour
         else
         {
             PlayerManager.Instance.SettleRemainingHoldingsToCash();
+            Server_SyncEndGame();
             DecideWinnerAndShow();
         }
     }
@@ -211,6 +212,7 @@ public class GameManager : NetworkBehaviour
         TurnManager.Instance.SelectionFinished -= OnSelectionFinished;
         TurnManager.Instance.SelectionFinished += OnSelectionFinished;
         Server_SyncRoundAndLottery();
+        Server_SyncHideMarketTags();
         TurnManager.Instance.StartCharacterSelectionPhase();
     }
 
@@ -237,9 +239,48 @@ public class GameManager : NetworkBehaviour
         UIManager.Instance.SetLotteryAmount(lottery);
     }
 
+    [Server]
+    public void Server_SyncHideMarketTags()
+    {
+        RpcSyncHideMarketTags();
+    }
+
+    [ClientRpc]
+    public void RpcSyncHideMarketTags()
+    {
+        UIManager.Instance.ClearAllMarketSecretTags();
+    }
+
     [ClientRpc]
     private void RpcShowWinner(string winnerName, int winnerMoney)
     {
         UIManager.Instance.ShowWinner(winnerName, winnerMoney);
+    }
+
+    [Server]
+    private void Server_SyncEndGame()
+    {
+        for (int pid = 0; pid < PlayerManager.Instance.players.Count; pid++)
+        {
+            int money = PlayerManager.Instance.players[pid].money;
+            var stocks = PlayerManager.Instance.players[pid].stocks.ToList();
+            int[] stockIds = stocks.Select(kv => (int)kv.Key).ToArray();
+            int[] stockCounts = stocks.Select(kv => kv.Value).ToArray();
+
+            RpcSyncEndGame(pid, money, stockIds, stockCounts);
+        }
+    }
+
+    [ClientRpc]
+    private void RpcSyncEndGame(int pid, int money, int[] stockTypeIds, int[] stockCounts)
+    {
+        var stocks = new Dictionary<StockType, int>();
+
+        for (int i = 0; i < stockTypeIds.Length && i < stockCounts.Length; i++)
+        {
+            stocks[(StockType)stockTypeIds[i]] = stockCounts[i];
+        }
+
+        UIManager.Instance.SyncEndGame(pid, money, stocks);
     }
 }

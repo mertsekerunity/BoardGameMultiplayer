@@ -2,12 +2,9 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using TMPro;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.UI;
-using static Unity.Collections.AllocatorManager;
 
 public class UIManager : MonoBehaviour
 {
@@ -103,7 +100,7 @@ public class UIManager : MonoBehaviour
             return;
         }
         Instance = this;
-        //DontDestroyOnLoad(transform.root.gameObject);
+        //DontDestroyOnLoad(transform.root.gameObject); //didnt work with mirror, still dont know why.
     }
 
     void Start()
@@ -112,44 +109,18 @@ public class UIManager : MonoBehaviour
         SetUndoButtonInteractable(false);
 
         // Subscribe to events
-        PlayerManager.Instance.OnMoneyChanged += HandleMoneyChanged;
-        PlayerManager.Instance.OnStocksChanged += HandleStocksChanged;
         StockMarketManager.Instance.OnStockPriceChanged += HandlePriceChanged;
         StockMarketManager.Instance.OnStockBankrupt += ShowBankruptcyUI;
         StockMarketManager.Instance.OnStockCeilingHit += ShowCeilingUI;
-        DeckManager.Instance.OnManipulationCardDrawn += ShowManipulationCard;
-        DeckManager.Instance.OnTaxCardDrawn += ShowTaxCard;
-        DeckManager.Instance.OnDecksReshuffled += RefreshDeckUI;
-        TurnManager.Instance.OnManipulationQueuedUI += HandleManipQueued;
-        TurnManager.Instance.OnManipulationRemovedUI += HandleManipRemoved;
-        TurnManager.Instance.OnProtectionChosenUI += HandleProtectionChosen;
     }
 
     void OnDestroy()
     {
-        if (PlayerManager.Instance != null)
-        {
-            PlayerManager.Instance.OnMoneyChanged -= HandleMoneyChanged;
-            PlayerManager.Instance.OnStocksChanged -= HandleStocksChanged;
-        }
-            
         if (StockMarketManager.Instance != null)
         {
             StockMarketManager.Instance.OnStockPriceChanged -= HandlePriceChanged;
             StockMarketManager.Instance.OnStockBankrupt -= ShowBankruptcyUI;
             StockMarketManager.Instance.OnStockCeilingHit -= ShowCeilingUI;
-        }
-        if (DeckManager.Instance != null)
-        {
-            DeckManager.Instance.OnManipulationCardDrawn -= ShowManipulationCard;
-            DeckManager.Instance.OnTaxCardDrawn -= ShowTaxCard;
-            DeckManager.Instance.OnDecksReshuffled -= RefreshDeckUI;
-        }
-        if (TurnManager.Instance != null)
-        {
-            TurnManager.Instance.OnManipulationQueuedUI -= HandleManipQueued;
-            TurnManager.Instance.OnManipulationRemovedUI -= HandleManipRemoved;
-            TurnManager.Instance.OnProtectionChosenUI -= HandleProtectionChosen;
         }
     }
 
@@ -164,25 +135,6 @@ public class UIManager : MonoBehaviour
         ManipulationType.Dividend => "Dividend",
         _ => "?"
     };
-
-    private void Update()
-    {
-        if (Input.GetKeyDown(KeyCode.Space))
-        {
-            TurnManager.Instance.EndActivePlayerTurn(); // advance
-        }
-            
-        if (Input.GetKeyDown(KeyCode.Tab))   // take control of whoever is active
-        {
-            var active = TurnManager.Instance.ActivePlayerId;
-            if (active >= 0 && active != _localPlayerId)
-            {
-                _localPlayerId = active;
-                SetActivePlayer(active, true);
-                ShowMessage($"Now controlling Player {active + 1}");
-            }
-        }
-    }
 
     public void CreatePlayerPanels(int[] ids, string[] names, int[] money)
     {
@@ -272,13 +224,6 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    private void HandleStocksChanged(int playerId, Dictionary<StockType, int> newStocks)
-    {
-        if (playerId != _localPlayerId) return;  // only show stocks for local player
-        if (_playerPanels.TryGetValue(playerId, out var panel))
-            panel.UpdateStocks(newStocks);
-    }
-
     private void HandlePriceChanged(StockType stock, int newPrice)
     {
         Debug.Log($"[UI] PriceChanged {stock} -> {newPrice}"); // remove later
@@ -286,33 +231,6 @@ public class UIManager : MonoBehaviour
         if (_marketRows.TryGetValue(stock, out var row))
         {
             row.UpdatePrice(newPrice);
-        }
-    }
-
-    private void HandlePendingCloseChanged(int playerId, StockType changedStock, int pending)
-    {
-        // Only the local player sees their pending reductions
-        if (playerId != _localPlayerId)
-        {
-            return;
-        }
-
-        // Build a display map = owned - pending for ALL stocks
-        var p = PlayerManager.Instance.players.First(pp => pp.id == playerId);
-        var display = new Dictionary<StockType, int>();
-
-        foreach (var stock in StockMarketManager.Instance.availableStocks)
-        {
-            int owned = p.stocks.TryGetValue(stock, out var c) ? c : 0;
-            int pend = PlayerManager.Instance.GetPendingCloseCount(playerId, stock);
-            display[stock] = Mathf.Max(0, owned - pend);
-        }
-
-        // Push to the local panel
-        if (_playerPanels.TryGetValue(playerId, out var panel))
-        {
-            panel.UpdateStocks(display);
-            panel.UpdatePendingClose(changedStock, pending);
         }
     }
 
@@ -509,16 +427,6 @@ public class UIManager : MonoBehaviour
     {
         // TODO: Implement popup or log
         Debug.Log("[MSG] " + message);
-    }
-
-    // Called whenever a player’s money changes
-    private void HandleMoneyChanged(int playerId, int newAmount)
-    {
-        if (_playerPanels.TryGetValue(playerId, out var panel))
-        {
-            panel.UpdateMoney(newAmount);
-            Debug.Log(newAmount); //remove later
-        }
     }
 
     public void ShowBiddingPanel(bool show)
@@ -851,13 +759,6 @@ public class UIManager : MonoBehaviour
             row.SetPrivateTag(TagFor(m));
     }
 
-    public void HandleManipRemoved(int pid, ManipulationType m, StockType s)
-    {
-        if (pid != _localPlayerId) return;
-        if (_marketRows.TryGetValue(s, out var row))
-            row.ClearPrivateTag();
-    }
-
     public void HandleProtectionChosen(int pid, StockType s)
     {
         if (pid != _localPlayerId) return;
@@ -1050,21 +951,16 @@ public class UIManager : MonoBehaviour
             winnerText.gameObject.SetActive(true);
         }
     }
+
+    public void SyncEndGame(int pid, int money, Dictionary<StockType, int> stocks)
+    {
+        if (_playerPanels.TryGetValue(pid, out var panel))
+        {
+            panel.UpdateMoney(money);
+            panel.UpdateStocks(stocks);
+        }
+    }
+
     private NetPlayer LocalNetPlayer =>
         Mirror.NetworkClient.isConnected ? Mirror.NetworkClient.localPlayer?.GetComponent<NetPlayer>() : null;
-
-    private void ShowManipulationCard(ManipulationType card)
-    {
-        // TODO: Display the drawn manipulation card
-    }
-
-    private void ShowTaxCard(TaxType card)
-    {
-        // TODO: Display the drawn tax card
-    }
-
-    private void RefreshDeckUI()
-    {
-        // TODO: Refresh deck counts or images
-    }
 }
