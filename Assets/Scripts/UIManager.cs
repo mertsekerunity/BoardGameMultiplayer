@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using TMPro;
 using UnityEditor;
 using UnityEngine;
@@ -22,6 +23,7 @@ public class UIManager : MonoBehaviour
 
     [SerializeField] private TextMeshProUGUI roundText;
     [SerializeField] private TextMeshProUGUI lotteryText;
+    [SerializeField] private TextMeshProUGUI winnerText;
 
     [SerializeField] private Image characterImage;
 
@@ -437,7 +439,7 @@ public class UIManager : MonoBehaviour
 
     public void SetLotteryAmount(int amount)
     {
-        lotteryText.text = amount.ToString();
+        lotteryText.text = $"{amount}$";
     }
 
     public void SetRoundNumber(int round)
@@ -867,6 +869,19 @@ public class UIManager : MonoBehaviour
             row.SetPrivateTag("Protected");
     }
 
+    public void RevealRoundManipTagsForAll(List<(ManipulationType m, StockType s)> list)
+    {
+        if (list == null) return;
+
+        foreach (var (m, s) in list)
+        {
+            if (_marketRows.TryGetValue(s, out var row))
+            {
+                row.SetPrivateTag(TagFor(m));
+            }
+        }
+    }
+
     public void ClearAllMarketSecretTags()
     {
         foreach (var row in _marketRows.Values)
@@ -1030,6 +1045,14 @@ public class UIManager : MonoBehaviour
         }
     }
 
+    public void ShowWinner(string winnerName, int winnerMoney)
+    {
+        if (winnerText != null)
+        {
+            winnerText.text = $"Game is finished. {winnerName} wins with {winnerMoney}$!";
+            winnerText.gameObject.SetActive(true);
+        }
+    }
     private NetPlayer LocalNetPlayer =>
         Mirror.NetworkClient.isConnected ? Mirror.NetworkClient.localPlayer?.GetComponent<NetPlayer>() : null;
 

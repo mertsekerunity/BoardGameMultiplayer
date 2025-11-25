@@ -15,7 +15,6 @@ public class GameManager : NetworkBehaviour
 
     private int currentRound = 1;
 
-    [SerializeField] private TextMeshProUGUI winnerText;
 
     private void Awake()
     {
@@ -129,7 +128,7 @@ public class GameManager : NetworkBehaviour
             TurnManager.Instance.BiddingFinished -= OnBiddingFinished;
             TurnManager.Instance.BiddingFinished += OnBiddingFinished;
             TurnManager.Instance.StartBiddingPhase();
-            Server_SyncRoundAndLottery();
+            
             return;
         }
         
@@ -202,11 +201,7 @@ public class GameManager : NetworkBehaviour
             }
         }
 
-        if (winnerText != null)
-        {
-            winnerText.text = $"Game is finished. The winner is {winner.playerName}";
-            winnerText.gameObject.SetActive(true);
-        }
+        RpcShowWinner(winner.playerName, winner.money);
     }
 
     [Server]
@@ -215,6 +210,7 @@ public class GameManager : NetworkBehaviour
         TurnManager.Instance.BiddingFinished -= OnBiddingFinished;
         TurnManager.Instance.SelectionFinished -= OnSelectionFinished;
         TurnManager.Instance.SelectionFinished += OnSelectionFinished;
+        Server_SyncRoundAndLottery();
         TurnManager.Instance.StartCharacterSelectionPhase();
     }
 
@@ -239,5 +235,11 @@ public class GameManager : NetworkBehaviour
     {
         UIManager.Instance.SetRoundNumber(round);
         UIManager.Instance.SetLotteryAmount(lottery);
+    }
+
+    [ClientRpc]
+    private void RpcShowWinner(string winnerName, int winnerMoney)
+    {
+        UIManager.Instance.ShowWinner(winnerName, winnerMoney);
     }
 }

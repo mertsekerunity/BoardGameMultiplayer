@@ -121,7 +121,7 @@ public class TurnManager : NetworkBehaviour
 
     private readonly Dictionary<int, int> _bidTakenBySlot = new Dictionary<int, int>(); // (slotIndex -> pid)
 
-    private float _biddingPanelCloseTimer = 4f;
+    private float _biddingPanelCloseTimer = 2.5f;
     public List<int> biddingOrder { get; private set; }
     public List<int> selectionOrder { get; private set; }
     public Dictionary<CharacterCardSO, int> characterAssignments { get; private set; }
@@ -477,6 +477,10 @@ public class TurnManager : NetworkBehaviour
     {
         if (ActivePlayerId < 0) return;
 
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
+        np?.TargetHidePrivateManipPeek();
+
         var card = PlayerManager.Instance.players[ActivePlayerId].selectedCard;
 
         int cardId = (int)card.characterNumber;
@@ -665,7 +669,7 @@ public class TurnManager : NetworkBehaviour
             if (!ok) return false;
 
             // Queue market payout at the anchored price; price tick happens at end-of-round
-            StockMarketManager.Instance.QueueCloseSale(ActivePlayerId, stock, anchoredGain);
+            StockMarketManager.Instance.QueueCloseSale(ActivePlayerId, stock, anchoredGain, current);
         }
 
         // History (store unitPrice only for close-sale so Undo can remove exact queued item)
@@ -1111,8 +1115,7 @@ public class TurnManager : NetworkBehaviour
             },
             onCancelled: () =>
             {
-                DeckManager.Instance.ReturnManipulationToDeck(m);
-                ConsumeSingleManip(ActivePlayerId);
+                np.TargetHidePrivateManipPeek();
             });
 
         return true;
@@ -1178,8 +1181,7 @@ public class TurnManager : NetworkBehaviour
             },
             onCancelled: () =>
             {
-                DeckManager.Instance.ReturnManipulationToDeck(m);
-                ConsumeSingleManip(ActivePlayerId);
+                np.TargetHidePrivateManipPeek();       
             });
 
         return true;
@@ -1395,14 +1397,25 @@ public class TurnManager : NetworkBehaviour
     {
         if (_pendingManipulations.Count > 0)
         {
-            Debug.Log("[Reveal] " + string.Join(", ", _pendingManipulations.Select(m => $"{m.card} on {m.stock}"))); // REMOVE LATER !!!
+            int n = _pendingManipulations.Count;
+            var manipIds = new int[n];
+            var stockIds = new int[n];
+
+            for (int i = 0; i < n; i++)
+            {
+                manipIds[i] = (int)_pendingManipulations[i].card;
+                stockIds[i] = (int)_pendingManipulations[i].stock;
+            }
+
+            RpcRevealRoundManipTags(manipIds, stockIds);
         }
             
         foreach (var pm in _pendingManipulations)
+        {
             ApplyManipulationNow(pm.card, pm.stock);
+        }
 
         _pendingManipulations.Clear();
-        // reservations are irrelevant after reveal; will be cleared by RoundStartReset at next round
     }
 
     [Server]
@@ -1907,6 +1920,23 @@ public class TurnManager : NetworkBehaviour
             return;
 
         UIManager.Instance.HideCharacterSelection();
+    }
+
+    [ClientRpc]
+    private void RpcRevealRoundManipTags(int[] manipIds, int[] stockIds)
+    {
+        if (manipIds == null || stockIds == null) return;
+
+        var list = new List<(ManipulationType, StockType)>();
+
+        for (int i = 0; i < manipIds.Length && i < stockIds.Length; i++)
+        {
+            var m = (ManipulationType)manipIds[i];
+            var s = (StockType)stockIds[i];
+            list.Add((m, s));
+        }
+
+        UIManager.Instance.RevealRoundManipTagsForAll(list);
     }
 
     [Server]

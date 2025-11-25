@@ -352,6 +352,12 @@ public class NetPlayer : NetworkBehaviour
     }
 
     [TargetRpc]
+    public void TargetHidePrivateManipPeek()
+    {
+        UIManager.Instance.HidePrivateManipPeek();
+    }
+
+    [TargetRpc]
     public void TargetOnManipQueued(ManipulationType m, StockType s)
     {
 

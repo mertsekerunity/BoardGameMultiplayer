@@ -27,6 +27,7 @@ public class StockMarketManager : MonoBehaviour
         public int playerId;
         public StockType stock;
         public int price; // anchored gain locked on seller’s turn
+        public int basePriceAtQueue;
     }
     private readonly List<CloseSale> _pendingCloseSales = new();
 
@@ -103,13 +104,14 @@ public class StockMarketManager : MonoBehaviour
     }
 
     // Queue a close sale to resolve end-of-round
-    public void QueueCloseSale(int playerId, StockType stock, int anchoredGain)
+    public void QueueCloseSale(int playerId, StockType stock, int anchoredGain, int basePriceAtQueue)
     {
         _pendingCloseSales.Add(new CloseSale
         {
             playerId = playerId,
             stock = stock,
-            price = anchoredGain
+            price = anchoredGain,
+            basePriceAtQueue = basePriceAtQueue
         });
     }
 
@@ -129,29 +131,35 @@ public class StockMarketManager : MonoBehaviour
     // End-of-round: pay anchored gains and tick market down per unit
     public void ProcessCloseSales()
     {
+        var finalBeforeSell = new Dictionary<StockType, int>(stockPrices);
+
         foreach (var cs in _pendingCloseSales)
         {
-            // 1) Pay seller at the anchored price captured on their turn
-            PlayerManager.Instance.AddMoney(cs.playerId, Mathf.Max(0, cs.price));
+            if (!stockPrices.TryGetValue(cs.stock, out var cur)) continue;
 
-            // 2) Move market down one step for that stock per unit sold
-            if (stockPrices.TryGetValue(cs.stock, out var cur))
-            {
-                int newPrice = Mathf.Clamp(cur - 1, minPrice, maxPrice);
-                stockPrices[cs.stock] = newPrice;
+            int anchored = cs.price;
+            int basePrice = cs.basePriceAtQueue;
 
-                TurnManager.Instance.Server_SyncStockPrice(cs.stock);
-                OnStockPriceChanged?.Invoke(cs.stock, newPrice);
+            finalBeforeSell.TryGetValue(cs.stock, out var finalPrice);
 
-                // Bankruptcy/Ceiling checks (ceiling rarely on -1, but kept for symmetry)
-                CheckBankruptcy(cs.stock);
-                CheckCeiling(cs.stock);
-            }
+            int delta = finalPrice - basePrice;
+
+            int finalPayout = Mathf.Max(0, anchored + delta);
+            PlayerManager.Instance.AddMoney(cs.playerId, finalPayout);
+
+            int newPrice = Mathf.Clamp(cur - 1, minPrice, maxPrice);
+            stockPrices[cs.stock] = newPrice;
+
+            TurnManager.Instance.Server_SyncStockPrice(cs.stock);
+            OnStockPriceChanged?.Invoke(cs.stock, newPrice);
+
+            CheckBankruptcy(cs.stock);
+            CheckCeiling(cs.stock);
+
         }
         _pendingCloseSales.Clear();
     }
 
-    // Manual adjustments (manipulation cards)
     public void AdjustPrice(StockType stock, int delta)
     {
         stockPrices[stock] = Mathf.Clamp(stockPrices[stock] + delta, minPrice, maxPrice);
@@ -189,7 +197,6 @@ public class StockMarketManager : MonoBehaviour
         OnStockPriceChanged?.Invoke(stock, stockPrices[stock]);
     }
 
-
     public void RevertOpenSell(StockType stock)
     {
         if (_lastBankruptcy.TryGetValue(stock, out var rec) && rec.active)
@@ -213,7 +220,6 @@ public class StockMarketManager : MonoBehaviour
             OnStockPriceChanged?.Invoke(stock, stockPrices[stock]);
         }
     }
-
 
     // Batch check for end-of-round hooks
     public void CheckBankruptcyAndCeilingAll()
