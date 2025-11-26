@@ -25,6 +25,8 @@ public class BiddingPanel : MonoBehaviour
     [SerializeField] private List<BiddingOption> options = new();
 
     private Action<int> _onBidChosen;     // callback to TurnManager (slotIndex)
+    
+    // reserved for future UI
     private string _currentPlayerName = "";
     private int _currentPlayerMoney = 0;
     private int _playerCount = 0;
@@ -102,7 +104,9 @@ public class BiddingPanel : MonoBehaviour
             }
         }
 
-        _onBidChosen?.Invoke(opt.slotIndex);
+        if (_onBidChosen == null) return;
+
+            _onBidChosen?.Invoke(opt.slotIndex);
     }
 
     public void MarkChoice(int pid, int slotIndex, string playerName)

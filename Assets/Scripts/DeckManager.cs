@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using Mirror;
 using UnityEngine;
 
 public class DeckManager : MonoBehaviour
@@ -28,7 +29,6 @@ public class DeckManager : MonoBehaviour
     public event Action<ManipulationType> OnManipulationCardDrawn;
     public event Action<TaxType> OnTaxCardDrawn;
     public event Action OnDecksReshuffled;
-    public event Action<int> OnLotteryChanged;
 
     private void Awake()
     {
@@ -42,6 +42,7 @@ public class DeckManager : MonoBehaviour
     }
 
     // Call once at game start
+    [Server]
     public void SetupDecks()
     {
         _manipDiscard.Clear();
@@ -57,6 +58,7 @@ public class DeckManager : MonoBehaviour
 
 
     // Called at end of each round to return played cards and reshuffle
+    [Server]
     public void CleanupRound()
     {
         while (_manipDiscard.Count > 0)
@@ -76,11 +78,12 @@ public class DeckManager : MonoBehaviour
 
 
     // Draws the top manipulation card
+    [Server]
     public ManipulationType DrawManipulationCard()
     {
         if (_manipRuntime.Count == 0)
         {
-            SetupDecks(); // NEEDS TO CHANGE !!!
+            SetupDecks();
         }
         var card = _manipRuntime[0];
         _manipRuntime.RemoveAt(0);
@@ -89,11 +92,12 @@ public class DeckManager : MonoBehaviour
     }
 
     // Draws the top tax card
+    [Server]
     public TaxType DrawTaxCard()
     {
         if (_taxRuntime.Count == 0)
         {
-            SetupDecks();  // NEEDS TO CHANGE !!!
+            SetupDecks();
         }
         var card = _taxRuntime[0];
         _taxRuntime.RemoveAt(0);
@@ -101,30 +105,28 @@ public class DeckManager : MonoBehaviour
         return card;
     }
 
+    [Server]
     public void IncreaseLottery()
     {
         lotteryPool += lotteryIncreaseAmount;
-        OnLotteryChanged?.Invoke(lotteryPool);
     }
 
-    // Give the entire lottery pool to caller and reset to 0.
+    [Server]
     public int ClaimLottery()
     {
         int amount = lotteryPool;
         lotteryPool = 0;
-        OnLotteryChanged?.Invoke(lotteryPool);
         return amount;
     }
 
-    // Put money back into the lottery pool (undo support).
+    [Server]
     public void RestoreLottery(int amount)
     {
         lotteryPool += amount;
-        OnLotteryChanged?.Invoke(lotteryPool);
     }
 
     // Random stock deck (infinite for now)
-    // Return a random stock from availableStocks.
+    [Server]
     public StockType DrawRandomStock()
     {
         var pool = StockMarketManager.Instance.availableStocks;
@@ -132,10 +134,10 @@ public class DeckManager : MonoBehaviour
     }
 
     // Placeholder for returning a stock to the random pool.
+    [Server]
     public void ReturnStockToRandom(StockType stock)
     {
-        // No-op for now (we aren’t tracking a finite deck yet).
-        // When you implement a real deck, push 'stock' back into it here.
+        
     }
 
     private List<ManipulationType> BuildManipulationLibrary()
@@ -158,12 +160,19 @@ public class DeckManager : MonoBehaviour
         };
     }
 
+    [Server]
     public ManipulationType DrawManipulation() => DrawManipulationCard();
 
+    [Server]
     public void DiscardManipulation(ManipulationType m) => _manipDiscard.Push(m);
+
+    [Server]
     public void ReturnManipulationToDeck(ManipulationType m) { _manipRuntime.Add(m); }
 
+    [Server]
     public void DiscardTax(TaxType t) => _taxDiscard.Push(t);
+
+    [Server]
     public void ReturnTaxToDeck(TaxType t) { _taxRuntime.Add(t); }
 
 

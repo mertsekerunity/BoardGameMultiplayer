@@ -43,7 +43,7 @@ public class MarketRow : MonoBehaviour
     {
         if (buyButton != null)
         {
-            buyButton.enabled = interactable;
+            buyButton.interactable = interactable;
         }
     }
 

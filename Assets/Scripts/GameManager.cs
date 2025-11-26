@@ -31,8 +31,9 @@ public class GameManager : NetworkBehaviour
     public void TryStartGame()
     {
         int connectedPlayers = NetworkServer.connections.Count;
+        int registeredPlayers = PlayerManager.Instance.players.Count;
 
-        if (connectedPlayers < requiredPlayers)
+        if (registeredPlayers < requiredPlayers)
         {
             Debug.Log($"[GM] Not starting yet. Players={connectedPlayers}/{requiredPlayers}");
             return;
@@ -45,7 +46,7 @@ public class GameManager : NetworkBehaviour
     [Server]
     private void InitializeGame()
     {
-        int playerCount = requiredPlayers;
+        int playerCount = PlayerManager.Instance.players.Count;
 
         // Set up core systems
         StockMarketManager.Instance.SetupMarket(playerCount);
@@ -103,8 +104,11 @@ public class GameManager : NetworkBehaviour
         int[] prices)
     {
         var sm = StockMarketManager.Instance;
+        var ui = UIManager.Instance;
 
-        sm.availableStocks = stocks.ToList();
+        if (sm == null || ui == null) return;
+
+            sm.availableStocks = stocks.ToList();
 
         sm.stockPrices = new Dictionary<StockType, int>();
         for (int i = 0; i < stocks.Length; i++)
@@ -235,6 +239,7 @@ public class GameManager : NetworkBehaviour
     [ClientRpc]
     private void RpcSyncRoundAndLottery(int round, int lottery)
     {
+        if (UIManager.Instance == null) return;
         UIManager.Instance.SetRoundNumber(round);
         UIManager.Instance.SetLotteryAmount(lottery);
     }
@@ -248,12 +253,14 @@ public class GameManager : NetworkBehaviour
     [ClientRpc]
     public void RpcSyncHideMarketTags()
     {
+        if (UIManager.Instance == null) return;
         UIManager.Instance.ClearAllMarketSecretTags();
     }
 
     [ClientRpc]
     private void RpcShowWinner(string winnerName, int winnerMoney)
     {
+        if (UIManager.Instance == null) return;
         UIManager.Instance.ShowWinner(winnerName, winnerMoney);
     }
 
@@ -274,6 +281,8 @@ public class GameManager : NetworkBehaviour
     [ClientRpc]
     private void RpcSyncEndGame(int pid, int money, int[] stockTypeIds, int[] stockCounts)
     {
+        if (UIManager.Instance == null) return;
+
         var stocks = new Dictionary<StockType, int>();
 
         for (int i = 0; i < stockTypeIds.Length && i < stockCounts.Length; i++)

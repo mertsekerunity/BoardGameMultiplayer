@@ -20,10 +20,10 @@ public class NetPlayer : NetworkBehaviour
 
     void OnPidChanged(int oldValue, int newValue)
     {
-        if (isLocalPlayer && newValue >= 0 && UIManager.Instance != null)
-        {
-            UIManager.Instance?.SetLocalPlayerId(newValue);
-        } 
+        if (!isLocalPlayer || newValue < 0) return;
+        if (UIManager.Instance == null) return;
+
+        UIManager.Instance.SetLocalPlayerId(newValue);
     }
 
     // ================== Commands (UI -> Server) ==================
@@ -78,7 +78,7 @@ public class NetPlayer : NetworkBehaviour
     {
         int active = TurnManager.Instance.ActivePlayerId;
 
-        TargetToast($"[NetPlayer] CmdEndTurn from pid={pid}, active={active}");
+        Debug.Log($"[NetPlayer] CmdEndTurn from pid={pid}, active={active}");
 
         if (active != pid)
         {
@@ -173,12 +173,14 @@ public class NetPlayer : NetworkBehaviour
     [TargetRpc]
     public void TargetBeginBidTurn(string playerName, int playerMoney)
     {
+        if (UIManager.Instance == null) return;
         UIManager.Instance.Bidding_BeginTurn(playerName, playerMoney);
     }
 
     [TargetRpc]
     public void TargetToastAbilityBlocked()
     {
+        if (UIManager.Instance == null) return;
         UIManager.Instance.ShowMessage("Your ability is blocked this round.");
         UIManager.Instance.SetAbilityButtonState(false);
         UIManager.Instance.SetUndoButtonInteractable(false);
@@ -187,6 +189,8 @@ public class NetPlayer : NetworkBehaviour
     [TargetRpc]
     public void TargetAskStockTarget(string prompt, string confirmPrefix, int[] stockTypeIds)
     {
+        if (UIManager.Instance == null) return;
+
         var candidates = new HashSet<StockType>(stockTypeIds.Select(id => (StockType)id));
 
         UIManager.Instance.ShowStockTargetPanel(
@@ -221,6 +225,8 @@ public class NetPlayer : NetworkBehaviour
     [TargetRpc]
     public void TargetAskManipStockTarget(string prompt, int[] stockTypeIds)
     {
+        if (UIManager.Instance == null) return;
+
         var candidates = new HashSet<StockType>(stockTypeIds.Select(id => (StockType)id));
 
         bool isProtect = prompt.IndexOf("protect", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -247,6 +253,7 @@ public class NetPlayer : NetworkBehaviour
                     },
                     onNo: () =>
                     {
+                        CmdCancelStockTarget();
                         UIManager.Instance.HidePrompt();
                     });
             },
@@ -259,6 +266,8 @@ public class NetPlayer : NetworkBehaviour
     [TargetRpc]
     public void TargetAskCharacterTarget(string prompt, int[] enabledCharacterNumbers, int[] disabledCharacterNumbers, int abilityId)
     {
+        if (UIManager.Instance == null) return;
+
         var enabled = new HashSet<int>(enabledCharacterNumbers);
         var disabled = new HashSet<int>(disabledCharacterNumbers);
         var ability = (CharacterAbilityType)abilityId;
@@ -292,6 +301,8 @@ public class NetPlayer : NetworkBehaviour
     [TargetRpc]
     public void TargetAskGamble(int money)
     {
+        if (UIManager.Instance == null) return;
+
         if (money >= 6)
         {
             UIManager.Instance.ShowAbilityConfirm(
@@ -336,44 +347,50 @@ public class NetPlayer : NetworkBehaviour
     [TargetRpc]
     public void TargetSetUndoInteractable(bool interactable)
     {
+        if (UIManager.Instance == null) return;
         UIManager.Instance.SetUndoButtonInteractable(interactable);
     }
 
     [TargetRpc]
     public void TargetSetAbilityButtonState(bool enabled)
     {
+        if (UIManager.Instance == null) return;
         UIManager.Instance.SetAbilityButtonState(enabled);
     }
 
     [TargetRpc]
     public void TargetShowPrivateManipPeek(ManipulationType m)
     {
+        if (UIManager.Instance == null) return;
         UIManager.Instance.ShowPrivateManipPeek(pid, m);
     }
 
     [TargetRpc]
     public void TargetHidePrivateManipPeek()
     {
+        if (UIManager.Instance == null) return;
         UIManager.Instance.HidePrivateManipPeek();
     }
 
     [TargetRpc]
     public void TargetOnManipQueued(ManipulationType m, StockType s)
     {
-
+        if (UIManager.Instance == null) return;
         UIManager.Instance.HandleManipQueued(pid, m, s);
     }
 
     [TargetRpc]
     public void TargetOnProtectionQueued(StockType s)
     {
-
+        if (UIManager.Instance == null) return;
         UIManager.Instance.HandleProtectionChosen(pid, s);
     }
 
     [TargetRpc]
     public void TargetAskManipChoice(string prompt, int[] manipIds)
     {
+        if (UIManager.Instance == null) return;
+
         var options = manipIds.Select(id => (ManipulationType)id).ToList();
 
         UIManager.Instance.ShowManipulationChoice(
@@ -396,6 +413,7 @@ public class NetPlayer : NetworkBehaviour
     [TargetRpc]
     public void TargetToast(string msg)
     {
+        if (UIManager.Instance == null) return;
         UIManager.Instance.ShowMessage(msg);
     }
 }

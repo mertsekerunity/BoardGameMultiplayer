@@ -63,6 +63,8 @@ public class PlayerPanel : MonoBehaviour
         SetSellButtonsInteractable(false);
         SetAbilityButtonInteractable(false);
         SetEndTurnButtonInteractable(false);
+
+        ClearPendingCloseAll();
     }
 
     public void UpdateMoney(int amount)

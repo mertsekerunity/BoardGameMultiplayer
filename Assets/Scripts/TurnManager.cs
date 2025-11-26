@@ -23,9 +23,6 @@ public class TurnManager : NetworkBehaviour
         public TurnActionType type;
         public StockType stock;
         public bool openSale; // only for sells
-        public CharacterAbilityType ability;
-        public Action undo;
-        public bool undoable = true;
         public int unitPrice;
     }
 
@@ -53,11 +50,6 @@ public class TurnManager : NetworkBehaviour
 
     private int _biddingCurrentPid = -1;
     private readonly Dictionary<int, int> _playerBids = new(); // pid -> amount
-    private Dictionary<int, int> _bidTakenByAmount = new Dictionary<int, int>();
-
-    public event Action<int, ManipulationType, StockType> OnManipulationQueuedUI;
-    public event Action<int, ManipulationType, StockType> OnManipulationRemovedUI;
-    public event Action<int, StockType> OnProtectionChosenUI;
 
     // Blocked character numbers this round
     private readonly HashSet<int> _blockedCharacters = new();
@@ -216,7 +208,6 @@ public class TurnManager : NetworkBehaviour
 
         _playerBids.Clear();
         _bidTakenBySlot.Clear();
-        _bidTakenByAmount.Clear();
 
         // tell all clients to reset their bidding UI
         RpcBiddingReset(PlayerManager.Instance.players.Count);
@@ -518,12 +509,21 @@ public class TurnManager : NetworkBehaviour
         faceDownDiscards.Clear();
 
         foreach (var kv in _cachedManipOptions)
+        {
             foreach (var m in kv.Value)
+            {
                 DeckManager.Instance.ReturnManipulationToDeck(m);
+            }
+                
+        }
+
         _cachedManipOptions.Clear();
 
         foreach (var kv in _cachedSingleManip)
+        {
             DeckManager.Instance.ReturnManipulationToDeck(kv.Value);
+        }
+            
         _cachedSingleManip.Clear();
     }
 
@@ -543,7 +543,6 @@ public class TurnManager : NetworkBehaviour
     {
         _buyLimitThisTurn = buyLimit;
         _sellLimitThisTurn = sellLimit;
-        UIManager.Instance.ShowMessage($"This turn limits: buy {_buyLimitThisTurn}, sell {_sellLimitThisTurn}");
     }
 
     [Server]
@@ -927,7 +926,6 @@ public class TurnManager : NetworkBehaviour
                             return;
                         }
 
-                        OnProtectionChosenUI?.Invoke(pickerPid, protectStock); //BUNU SOR
                         Server_NotifyProtectionQueued(pickerPid, protectStock);
                         PushAbilityBarrier();
                     },
@@ -1452,22 +1450,10 @@ public class TurnManager : NetworkBehaviour
     }
 
     [Server]
-    public Action QueueManipulation(int playerId, ManipulationType card, StockType stock)
+    public void QueueManipulation(int playerId, ManipulationType card, StockType stock)
     {
-        OnManipulationQueuedUI?.Invoke(playerId, card, stock);
-
         var pm = new PendingManipulation { playerId = playerId, card = card, stock = stock };
         _pendingManipulations.Add(pm);
-
-        // Undo: remove it from the queue and free the reservation, return the card to deck
-        return () =>
-        {
-            int idx = _pendingManipulations.FindIndex(x => x.playerId == playerId && x.card == card && x.stock == stock);
-            if (idx >= 0) _pendingManipulations.RemoveAt(idx);
-            OnManipulationRemovedUI?.Invoke(playerId, card, stock);
-            ReleaseManipulationTarget(stock);
-            DeckManager.Instance.ReturnManipulationToDeck(card);
-        };
     }
 
     [Server]
@@ -1645,8 +1631,8 @@ public class TurnManager : NetworkBehaviour
                 thiefNp?.TargetToast($"You stole {transfer}$ from {victimName}.");
                 victimNp?.TargetToast($"{thiefName} stole {transfer}$ from you.");
 
-                TurnManager.Instance.Server_SyncPlayerState(t.thiefPid);
-                TurnManager.Instance.Server_SyncPlayerState(t.victimPid);
+                Server_SyncPlayerState(t.thiefPid);
+                Server_SyncPlayerState(t.victimPid);
             }
             _pendingThief.RemoveAt(i);
         }

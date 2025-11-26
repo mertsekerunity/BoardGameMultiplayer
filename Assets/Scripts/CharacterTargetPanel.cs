@@ -24,6 +24,9 @@ public class CharacterTargetPanel : MonoBehaviour
         _onPick = onPick;
         gameObject.SetActive(true);
 
+        enabledNumbers ??= new HashSet<int>();
+        disabledNumbers ??= new HashSet<int>();
+
         foreach (var cb in buttons)
         {
             bool enable = enabledNumbers.Contains(cb.characterNumber);

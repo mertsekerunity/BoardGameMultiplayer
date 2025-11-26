@@ -22,9 +22,6 @@ public class PlayerManager : MonoBehaviour
 
     private readonly Dictionary<int, Dictionary<StockType, int>> _pendingCloseSells = new Dictionary<int, Dictionary<StockType, int>>();
 
-    public event Action<int, int> OnMoneyChanged;
-    public event Action<int, Dictionary<StockType, int>> OnStocksChanged;
-    public event Action<int, StockType, int> OnPendingCloseChanged;
 
     private void Awake()
     {
@@ -75,51 +72,24 @@ public class PlayerManager : MonoBehaviour
         }
     }
 
-    // Single-player helper – not used in multiplayer flow anymore.
-    public void SetupPlayers(int playerCount)
-    {
-        players.Clear();
-        for (int i = 0; i < playerCount; i++)
-        {
-            var p = new Player { id = i, playerName = $"Player {i + 1}", money = 5, stocks = new Dictionary<StockType, int>() };
-            var available = StockMarketManager.Instance.availableStocks;
-
-            for (int j = 0; j < 3; j++) // Adding 3 random stocks
-            {
-                var stock = available[UnityEngine.Random.Range(0, available.Count)];
-                if (!p.stocks.ContainsKey(stock))
-                {
-                    p.stocks[stock] = 0;
-                }
-                p.stocks[stock]++;
-            }
-            players.Add(p);
-        }
-    }
-
-    // Increase player's money by amount
     public void AddMoney(int playerId, int amount)
     {
         var player = players.FirstOrDefault(p => p.id == playerId);
         if (player != null)
         {
             player.money += amount;
-            OnMoneyChanged?.Invoke(playerId, player.money);
         }
     }
 
-    // Decrease player's money by amount
     public void RemoveMoney(int playerId, int amount)
     {
         var player = players.FirstOrDefault(p => p.id == playerId);
         if (player != null)
         {
             player.money = Mathf.Max(0, player.money - amount);
-            OnMoneyChanged?.Invoke(playerId, player.money);
         }
     }
 
-    // Add count stocks of given type to player
     public void AddStock(int playerId, StockType stockType, int count)
     {
         var player = players.FirstOrDefault(p => p.id == playerId);
@@ -130,21 +100,19 @@ public class PlayerManager : MonoBehaviour
                 player.stocks[stockType] = 0;
             }
             player.stocks[stockType] += count;
-            OnStocksChanged?.Invoke(playerId, new Dictionary<StockType, int>(player.stocks));
         }
     }
 
-    // Remove count stocks of given type from player
     public void RemoveStock(int playerId, StockType stockType, int count)
     {
         var player = players.FirstOrDefault(p => p.id == playerId);
         if (player != null && player.stocks.ContainsKey(stockType))
         {
             player.stocks[stockType] = Mathf.Max(0, player.stocks[stockType] - count);
-            OnStocksChanged?.Invoke(playerId, new Dictionary<StockType, int>(player.stocks));
         }
     }
 
+    [Server]
     public bool TryBuyStock(int playerId, StockType stock)
     {
         Debug.Log($"[PLAYER] TryBuyStock pid={playerId} stock={stock} @frame {Time.frameCount}"); // remove later
@@ -155,13 +123,13 @@ public class PlayerManager : MonoBehaviour
         {
             return false;
         }
-        //player.money -= price;
         RemoveMoney(playerId, price);
         AddStock(playerId, stock, 1);
         StockMarketManager.Instance.BuyStock(stock);
         return true;
     }
 
+    [Server]
     public bool TrySellStock(int playerId, StockType stock, bool openSale)
     {
         var player = players.FirstOrDefault(p => p.id == playerId);
@@ -191,9 +159,6 @@ public class PlayerManager : MonoBehaviour
                 _pendingCloseSells[playerId] = map;
             }
             map[stock] = map.TryGetValue(stock, out var cur) ? cur + 1 : 1;
-
-            // Tell UI the pending count for this stock changed
-            OnPendingCloseChanged?.Invoke(playerId, stock, map[stock]);
         }
 
         return true;
@@ -230,9 +195,6 @@ public class PlayerManager : MonoBehaviour
                 int count = sv.Value;
                 // Remove the sold copies from hand now
                 RemoveStock(pid, stock, count);
-
-                // pending for this stock is now zero
-                OnPendingCloseChanged?.Invoke(pid, stock, 0);
             }
         }
         _pendingCloseSells.Clear();
@@ -256,11 +218,19 @@ public class PlayerManager : MonoBehaviour
             if (map.TryGetValue(stock, out var c))
             {
                 c -= count;
-                if (c <= 0) map.Remove(stock); else map[stock] = c;
-                // notify UI of updated count
-                OnPendingCloseChanged?.Invoke(playerId, stock, map.TryGetValue(stock, out var left) ? left : 0);
+                if (c <= 0)
+                {
+                    map.Remove(stock);
+                }
+                else
+                {
+                    map[stock] = c;
+                }                    
             }
-            if (map.Count == 0) _pendingCloseSells.Remove(playerId);
+            if (map.Count == 0)
+            {
+                _pendingCloseSells.Remove(playerId);
+            }
         }
     }
 
@@ -293,7 +263,6 @@ public class PlayerManager : MonoBehaviour
                 if (count > 0) RemoveStock(p.id, stock, count);
                 gained += add;
             }
-            // optional: Debug.Log($"[SETTLE] P{p.id} +${gained}");
         }
     }
 }
