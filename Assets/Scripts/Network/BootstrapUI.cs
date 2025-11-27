@@ -34,6 +34,19 @@ public class BootstrapUI : MonoBehaviour
 
     private Mode currentMode = Mode.None;
 
+    private void Awake()
+    {
+        if(nameInput != null)
+        {
+            nameInput.text = string.Empty;
+        }
+
+        if (addressInput != null)
+        {
+            addressInput.text = string.Empty;
+        }
+    }
+
     private void Start()
     {
         EnterNeutralState();

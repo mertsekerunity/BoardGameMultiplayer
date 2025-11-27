@@ -2267,7 +2267,7 @@ MonoBehaviour:
       m_Calls:
       - m_Target: {fileID: 238348085}
         m_TargetAssemblyTypeName: BootstrapUI, Assembly-CSharp
-        m_MethodName: OnClickJoin
+        m_MethodName: OnClickCancel
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
