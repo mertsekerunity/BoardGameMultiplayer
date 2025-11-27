@@ -10,7 +10,7 @@ public class GameManager : NetworkBehaviour
 {
     public static GameManager Instance { get; private set; }
 
-    [SerializeField] int requiredPlayers = 4;
+    private int requiredPlayers;
     private int maxRound = 7;
 
     private int currentRound = 1;
@@ -30,10 +30,15 @@ public class GameManager : NetworkBehaviour
     [Server]
     public void TryStartGame()
     {
-        int connectedPlayers = NetworkServer.connections.Count;
-        int registeredPlayers = PlayerManager.Instance.players.Count;
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        if (nm != null)
+        {
+            requiredPlayers = nm.requiredPlayers;
+        }
 
-        if (registeredPlayers < requiredPlayers)
+        int connectedPlayers = NetworkServer.connections.Count;
+
+        if (connectedPlayers < requiredPlayers)
         {
             Debug.Log($"[GM] Not starting yet. Players={connectedPlayers}/{requiredPlayers}");
             return;
@@ -46,7 +51,7 @@ public class GameManager : NetworkBehaviour
     [Server]
     private void InitializeGame()
     {
-        int playerCount = PlayerManager.Instance.players.Count;
+        int playerCount = requiredPlayers;
 
         // Set up core systems
         StockMarketManager.Instance.SetupMarket(playerCount);

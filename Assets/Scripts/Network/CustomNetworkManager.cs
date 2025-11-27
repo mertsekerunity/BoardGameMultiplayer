@@ -4,8 +4,32 @@ using UnityEngine;
 
 public class CustomNetworkManager : NetworkManager
 {
+    public static CustomNetworkManager Instance { get; private set; }
+
+    [Header("Game Settings")]
+    [Range(4, 6)]
+    public int requiredPlayers = 4;
+
+    [HideInInspector] public string pendingPlayerName = "Player"; // TODO: remote name sync later
+
     private int nextPid = 0;
     private readonly Dictionary<NetworkConnectionToClient, NetPlayer> connToPlayer = new();
+
+    public override void Awake()
+    {
+        base.Awake();
+        if (Instance != null && Instance != this)
+        {
+            Destroy(this);
+            return;
+        }
+        Instance = this;
+    }
+
+    public void SetRequiredPlayers(int count)
+    {
+        requiredPlayers = Mathf.Clamp(count, 4, 6);
+    }
 
     public override void OnStartServer()
     {
@@ -27,7 +51,7 @@ public class CustomNetworkManager : NetworkManager
         base.OnServerAddPlayer(conn);
 
         var np = conn.identity.GetComponent<NetPlayer>();
-        np.pid = nextPid++;                    // authoritative pid
+        np.pid = nextPid++;
         connToPlayer[conn] = np;
 
         // tell PlayerManager about this player (Server side)
