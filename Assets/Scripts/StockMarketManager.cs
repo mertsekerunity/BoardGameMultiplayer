@@ -174,7 +174,7 @@ public class StockMarketManager : MonoBehaviour
 
     // Reverts for Undo (guard with clamps)
     [Server]
-    public void RevertBuy(StockType stock)
+    public void RevertBuy(int buyerPid, StockType stock)
     {
         // If that buy had triggered a ceiling, fully roll it back
         if (_lastCeiling.TryGetValue(stock, out var rec) && rec.active)
@@ -188,7 +188,17 @@ public class StockMarketManager : MonoBehaviour
             // 2) Restore destroyed holdings
             foreach (var kv in rec.destroyedByPlayer)
             {
-                PlayerManager.Instance.AddStock(kv.Key, stock, kv.Value);
+                int restoreCount = kv.Value;
+
+                if (kv.Key == buyerPid)
+                {
+                    restoreCount = Mathf.Max(0, restoreCount - 1);
+                }
+
+                if (restoreCount > 0)
+                {
+                    PlayerManager.Instance.AddStock(kv.Key, stock, restoreCount);
+                }
             }
 
             // 3) Restore exact pre-buy price (e.g., 7), not starting-1
@@ -198,12 +208,17 @@ public class StockMarketManager : MonoBehaviour
             // mark record consumed
             rec.active = false;
             _lastCeiling[stock] = rec;
+
+            TurnManager.Instance.Server_SyncAllPlayers();
+            TurnManager.Instance.Server_SyncStockPrice(stock);
             return;
         }
 
         // Normal undo when no ceiling was triggered
         stockPrices[stock] = Mathf.Clamp(stockPrices[stock] - 1, minPrice, maxPrice);
         OnStockPriceChanged?.Invoke(stock, stockPrices[stock]);
+
+        TurnManager.Instance.Server_SyncStockPrice(stock);
     }
 
     [Server]
@@ -224,6 +239,9 @@ public class StockMarketManager : MonoBehaviour
             // Mark record as consumed
             rec.active = false;
             _lastBankruptcy[stock] = rec;
+
+            TurnManager.Instance.Server_SyncAllPlayers();
+            TurnManager.Instance.Server_SyncStockPrice(stock);
         }
         else
         {
@@ -320,6 +338,10 @@ public class StockMarketManager : MonoBehaviour
             
         // Reset price
         stockPrices[stock] = startingPrice;
+
+        TurnManager.Instance.Server_SyncAllPlayers();
+        TurnManager.Instance.Server_SyncStockPrice(stock);
+        TurnManager.Instance.Server_NotifyBankruptcy(stock);
     }
 
     [Server]
@@ -361,6 +383,10 @@ public class StockMarketManager : MonoBehaviour
         }
             
         stockPrices[stock] = startingPrice;
+
+        TurnManager.Instance.Server_SyncAllPlayers();
+        TurnManager.Instance.Server_SyncStockPrice(stock);
+        TurnManager.Instance.Server_NotifyCeiling(stock);
     }
 
     public void RaiseStockPriceChanged(StockType stock, int newPrice)

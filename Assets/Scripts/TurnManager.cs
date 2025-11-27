@@ -603,7 +603,7 @@ public class TurnManager : NetworkBehaviour
         if (!ok) return false;
 
         // Refund the difference so net paid == anchored (bulk pricing / Trader)
-        int refunded = current - payPrice;       // current >= payPrice normally
+        int refunded = current - payPrice;
         if (refunded > 0) PlayerManager.Instance.AddMoney(ActivePlayerId, refunded);
 
         _history.Push(new TurnHistoryEntry { type = TurnActionType.Buy, stock = stock });
@@ -1552,7 +1552,7 @@ public class TurnManager : NetworkBehaviour
                     int payPrice = AnchoredBuy(entry.stock);
                     PlayerManager.Instance.RemoveStock(ActivePlayerId, entry.stock, 1);
                     PlayerManager.Instance.AddMoney(ActivePlayerId, payPrice);
-                    StockMarketManager.Instance.RevertBuy(entry.stock); // price--
+                    StockMarketManager.Instance.RevertBuy(ActivePlayerId, entry.stock);
                     _buyUsed = Mathf.Max(0, _buyUsed - 1);
 
                     Server_SyncPlayerState(ActivePlayerId);
@@ -1566,7 +1566,7 @@ public class TurnManager : NetworkBehaviour
                         int gain = AnchoredSell(entry.stock);
                         PlayerManager.Instance.AddStock(ActivePlayerId, entry.stock, 1);
                         PlayerManager.Instance.RemoveMoney(ActivePlayerId, gain);
-                        StockMarketManager.Instance.RevertOpenSell(entry.stock); // price++
+                        StockMarketManager.Instance.RevertOpenSell(entry.stock);
 
                         Server_SyncPlayerState(ActivePlayerId);
                         Server_SyncStockPrice(entry.stock);

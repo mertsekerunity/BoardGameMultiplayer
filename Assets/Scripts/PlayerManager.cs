@@ -115,14 +115,14 @@ public class PlayerManager : MonoBehaviour
     [Server]
     public bool TryBuyStock(int playerId, StockType stock)
     {
-        Debug.Log($"[PLAYER] TryBuyStock pid={playerId} stock={stock} @frame {Time.frameCount}"); // remove later
-
         var price = StockMarketManager.Instance.stockPrices[stock];
         var player = players.FirstOrDefault(p => p.id == playerId);
-        if (player == null || player.money < price)
+
+        if (player == null)
         {
             return false;
         }
+
         RemoveMoney(playerId, price);
         AddStock(playerId, stock, 1);
         StockMarketManager.Instance.BuyStock(stock);
