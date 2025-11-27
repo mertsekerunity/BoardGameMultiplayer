@@ -6546,7 +6546,7 @@ MonoBehaviour:
   syncDirection: 0
   syncMode: 0
   syncInterval: 0
-  requiredPlayers: 2
+  requiredPlayers: 3
 --- !u!114 &1190302175
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6916,7 +6916,7 @@ MonoBehaviour:
   m_StartCorner: 0
   m_StartAxis: 1
   m_CellSize: {x: 100, y: 100}
-  m_Spacing: {x: 350, y: 225}
+  m_Spacing: {x: 300, y: 225}
   m_Constraint: 1
   m_ConstraintCount: 3
 --- !u!1 &1248628972

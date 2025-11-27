@@ -1188,8 +1188,6 @@ public class TurnManager : NetworkBehaviour
 
         var m = GetOrCreateSingleManip(ActivePlayerId);
 
-        np.TargetShowPrivateManipPeek(m);
-
         var enabled = new HashSet<StockType>(
             StockMarketManager.Instance.availableStocks
                 .Where(s => !_manipulatedStocksThisRound.Contains(s) &&
@@ -1208,6 +1206,8 @@ public class TurnManager : NetworkBehaviour
             PushAbilityBarrier();
             return true;
         }
+
+        np.TargetShowPrivateManipPeek(m);
 
         string prompt = $"{playerName}, choose a stock to apply manipulation";
 
@@ -2026,6 +2026,24 @@ public class TurnManager : NetworkBehaviour
             Server_SyncStockPrice(s);
         }
     }
+
+    [ClientRpc]
+    void RpcShowBankruptcy(StockType stock)
+    {
+        UIManager.Instance.ShowBankruptcyUI(stock);
+    }
+
+    [Server]
+    public void Server_NotifyBankruptcy(StockType stock) => RpcShowBankruptcy(stock);
+
+    [ClientRpc]
+    void RpcShowCeiling(StockType stock)
+    {
+        UIManager.Instance.ShowCeilingUI(stock);
+    }
+
+    [Server]
+    public void Server_NotifyCeiling(StockType stock) => RpcShowCeiling(stock);
 
     [Server]
     public void CleanupRound()

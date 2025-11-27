@@ -110,8 +110,6 @@ public class UIManager : MonoBehaviour
 
         // Subscribe to events
         StockMarketManager.Instance.OnStockPriceChanged += HandlePriceChanged;
-        StockMarketManager.Instance.OnStockBankrupt += ShowBankruptcyUI;
-        StockMarketManager.Instance.OnStockCeilingHit += ShowCeilingUI;
     }
 
     void OnDestroy()
@@ -119,8 +117,6 @@ public class UIManager : MonoBehaviour
         if (StockMarketManager.Instance != null)
         {
             StockMarketManager.Instance.OnStockPriceChanged -= HandlePriceChanged;
-            StockMarketManager.Instance.OnStockBankrupt -= ShowBankruptcyUI;
-            StockMarketManager.Instance.OnStockCeilingHit -= ShowCeilingUI;
         }
     }
 
@@ -822,13 +818,13 @@ public class UIManager : MonoBehaviour
     }
 
 
-    private void ShowBankruptcyUI(StockType stock)
+    public void ShowBankruptcyUI(StockType stock)
     {
         string text = $"{stock} stock went bankrupt";
         ShowPrompt(text);
     }
 
-    private void ShowCeilingUI(StockType stock)
+    public void ShowCeilingUI(StockType stock)
     {
         string text = $"{stock} stock hit ceiling";
         ShowPrompt(text);

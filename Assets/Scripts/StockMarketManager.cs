@@ -12,8 +12,6 @@ public class StockMarketManager : MonoBehaviour
     public Dictionary<StockType, int> stockPrices;
 
     public event Action<StockType, int> OnStockPriceChanged;
-    public event Action<StockType> OnStockBankrupt;
-    public event Action<StockType> OnStockCeilingHit;
 
     [Header("Price Bounds")]
     public int minPrice = 0;
@@ -252,7 +250,6 @@ public class StockMarketManager : MonoBehaviour
     {
         if (stockPrices[stock] <= minPrice)
         {
-            OnStockBankrupt?.Invoke(stock);
 
             // Remove all holdings of this stock from all players
             foreach (var player in PlayerManager.Instance.players)
@@ -264,7 +261,10 @@ public class StockMarketManager : MonoBehaviour
             }
 
             stockPrices[stock] = startingPrice;
-            OnStockPriceChanged?.Invoke(stock, startingPrice);
+
+            TurnManager.Instance.Server_SyncAllPlayers();
+            TurnManager.Instance.Server_SyncStockPrice(stock);
+            TurnManager.Instance.Server_NotifyBankruptcy(stock);
         }
     }
 
@@ -274,8 +274,6 @@ public class StockMarketManager : MonoBehaviour
     {
         if (stockPrices[stock] >= maxPrice)
         {
-            OnStockCeilingHit?.Invoke(stock);
-
             foreach (var player in PlayerManager.Instance.players)
             {
                 if (player.stocks.TryGetValue(stock, out var count) && count > 0)
@@ -286,7 +284,10 @@ public class StockMarketManager : MonoBehaviour
             }
 
             stockPrices[stock] = startingPrice;
-            OnStockPriceChanged?.Invoke(stock, startingPrice);
+
+            TurnManager.Instance.Server_SyncAllPlayers();
+            TurnManager.Instance.Server_SyncStockPrice(stock);
+            TurnManager.Instance.Server_NotifyCeiling(stock);
         }
     }
 
@@ -319,8 +320,6 @@ public class StockMarketManager : MonoBehaviour
             
         // Reset price
         stockPrices[stock] = startingPrice;
-        OnStockPriceChanged?.Invoke(stock, startingPrice);
-        OnStockBankrupt?.Invoke(stock);
     }
 
     [Server]
@@ -362,8 +361,6 @@ public class StockMarketManager : MonoBehaviour
         }
             
         stockPrices[stock] = startingPrice;
-        OnStockPriceChanged?.Invoke(stock, startingPrice);
-        OnStockCeilingHit?.Invoke(stock);
     }
 
     public void RaiseStockPriceChanged(StockType stock, int newPrice)
