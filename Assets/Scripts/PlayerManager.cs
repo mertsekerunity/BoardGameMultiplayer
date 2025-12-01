@@ -113,9 +113,8 @@ public class PlayerManager : MonoBehaviour
     }
 
     [Server]
-    public bool TryBuyStock(int playerId, StockType stock)
+    public bool TryBuyStock(int playerId, StockType stock, int effectivePrice)
     {
-        var price = StockMarketManager.Instance.stockPrices[stock];
         var player = players.FirstOrDefault(p => p.id == playerId);
 
         if (player == null)
@@ -123,7 +122,7 @@ public class PlayerManager : MonoBehaviour
             return false;
         }
 
-        RemoveMoney(playerId, price);
+        RemoveMoney(playerId, effectivePrice);
         AddStock(playerId, stock, 1);
         StockMarketManager.Instance.BuyStock(stock);
         return true;

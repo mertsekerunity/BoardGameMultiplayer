@@ -14,8 +14,6 @@ public class NetPlayer : NetworkBehaviour
     public override void OnStartLocalPlayer()
     {
         base.OnStartLocalPlayer();
-
-        Debug.Log($"[NetPlayer] OnStartLocalPlayer, pid={pid}");
     }
 
     void OnPidChanged(int oldValue, int newValue)
@@ -78,8 +76,6 @@ public class NetPlayer : NetworkBehaviour
     {
         int active = TurnManager.Instance.ActivePlayerId;
 
-        Debug.Log($"[NetPlayer] CmdEndTurn from pid={pid}, active={active}");
-
         if (active != pid)
         {
             TargetToast("Not your turn.");
@@ -115,7 +111,6 @@ public class NetPlayer : NetworkBehaviour
     {
         if (TurnManager.Instance == null)
         {
-            Debug.LogWarning("[CmdConfirmCharacterSelection] TurnManager.Instance is null on server.");
             return;
         }
 
@@ -181,7 +176,7 @@ public class NetPlayer : NetworkBehaviour
     public void TargetToastAbilityBlocked()
     {
         if (UIManager.Instance == null) return;
-        UIManager.Instance.ShowMessage("Your ability is blocked this round.");
+        UIManager.Instance.ShowLocalToast("Your ability is blocked for this round.");
         UIManager.Instance.SetAbilityButtonState(false);
         UIManager.Instance.SetUndoButtonInteractable(false);
     }
@@ -207,12 +202,10 @@ public class NetPlayer : NetworkBehaviour
                 onYes: () =>
                 {
                     CmdConfirmStockTarget((int)stock);
-                    UIManager.Instance.HidePrompt();
                 },
                 onNo: () =>
                 {
                     CmdCancelStockTarget();
-                    UIManager.Instance.HidePrompt();
                 });
 
             },
@@ -249,12 +242,10 @@ public class NetPlayer : NetworkBehaviour
                     onYes: () =>
                     {
                         CmdConfirmStockTarget((int)stock);
-                        UIManager.Instance.HidePrompt();
                     },
                     onNo: () =>
                     {
                         CmdCancelStockTarget();
-                        UIManager.Instance.HidePrompt();
                     });
             },
             onCancelled: () =>
@@ -272,7 +263,7 @@ public class NetPlayer : NetworkBehaviour
         var disabled = new HashSet<int>(disabledCharacterNumbers);
         var ability = (CharacterAbilityType)abilityId;
 
-        UIManager.Instance.ShowPrompt(prompt);
+        UIManager.Instance.ShowLocalToast(prompt);
 
         UIManager.Instance.ShowCharacterTargetPanel(
             pid,            // NetPlayer's pid
@@ -288,12 +279,10 @@ public class NetPlayer : NetworkBehaviour
                     onYes: () =>
                     {
                         CmdConfirmCharacterTarget(num);
-                        UIManager.Instance.HidePrompt();
                     },
                     onNo: () =>
                     {
                         CmdCancelCharacterTarget();
-                        UIManager.Instance.HidePrompt();
                     });
             });
     }
@@ -413,7 +402,6 @@ public class NetPlayer : NetworkBehaviour
     [TargetRpc]
     public void TargetToast(string msg)
     {
-        if (UIManager.Instance == null) return;
-        UIManager.Instance.ShowMessage(msg);
+        UIManager.Instance.ShowLocalToast(msg);
     }
 }

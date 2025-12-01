@@ -5,6 +5,7 @@ using Mirror;
 using TMPro;
 using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.Rendering.Universal.Internal;
 
 public class GameManager : NetworkBehaviour
 {
@@ -40,11 +41,9 @@ public class GameManager : NetworkBehaviour
 
         if (connectedPlayers < requiredPlayers)
         {
-            Debug.Log($"[GM] Not starting yet. Players={connectedPlayers}/{requiredPlayers}");
             return;
         }
 
-        Debug.Log("[GM] All players joined, initializing game.");
         InitializeGame();
     }
 
@@ -128,14 +127,17 @@ public class GameManager : NetworkBehaviour
     [Server]
     public void StartRound()
     {
+        TurnManager.Instance.RpcShowGlobalBanner($"Round {currentRound} started.");
         DeckManager.Instance.IncreaseLottery();
         TurnManager.Instance.RoundStartReset();
+        TurnManager.Instance.RpcShowGlobalBanner("Discard phase started.");
         TurnManager.Instance.StartDiscardPhase();
 
         if (currentRound > 1)
         {
             TurnManager.Instance.BiddingFinished -= OnBiddingFinished;
             TurnManager.Instance.BiddingFinished += OnBiddingFinished;
+            TurnManager.Instance.RpcShowGlobalBanner("Bidding phase started.");
             TurnManager.Instance.StartBiddingPhase();
             
             return;
@@ -145,6 +147,7 @@ public class GameManager : NetworkBehaviour
         TurnManager.Instance.SelectionFinished += OnSelectionFinished;
         Server_SyncRoundAndLottery();
         Server_SyncHideMarketTags();
+        TurnManager.Instance.RpcShowGlobalBanner("Character selection phase started.");
         TurnManager.Instance.StartCharacterSelectionPhase();
     }
 
@@ -222,6 +225,7 @@ public class GameManager : NetworkBehaviour
         TurnManager.Instance.SelectionFinished += OnSelectionFinished;
         Server_SyncRoundAndLottery();
         Server_SyncHideMarketTags();
+        TurnManager.Instance.RpcShowGlobalBanner("Character selection phase started.");
         TurnManager.Instance.StartCharacterSelectionPhase();
     }
 
@@ -229,6 +233,7 @@ public class GameManager : NetworkBehaviour
     private void OnSelectionFinished()
     {
         TurnManager.Instance.SelectionFinished -= OnSelectionFinished;
+        TurnManager.Instance.RpcShowGlobalBanner("Main phase started.");
         TurnManager.Instance.StartMainPhase();
     }
 

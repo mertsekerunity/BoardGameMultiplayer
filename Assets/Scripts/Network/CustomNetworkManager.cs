@@ -6,9 +6,7 @@ public class CustomNetworkManager : NetworkManager
 {
     public static CustomNetworkManager Instance { get; private set; }
 
-    [Header("Game Settings")]
-    [Range(4, 6)]
-    public int requiredPlayers = 4;
+    public int requiredPlayers;
 
     [HideInInspector] public string pendingPlayerName = "Player"; // TODO: remote name sync later
 
@@ -28,7 +26,8 @@ public class CustomNetworkManager : NetworkManager
 
     public void SetRequiredPlayers(int count)
     {
-        requiredPlayers = Mathf.Clamp(count, 4, 6);
+        //requiredPlayers = Mathf.Clamp(count, 2, 6);
+        requiredPlayers = count;
     }
 
     public override void OnStartServer()

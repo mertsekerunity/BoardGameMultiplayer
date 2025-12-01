@@ -10,8 +10,6 @@ public class UIManager : MonoBehaviour
 {
     public static UIManager Instance { get; private set; }
 
-    [SerializeField] private TextMeshProUGUI globalPrompt;
-
     [SerializeField] private Transform playersPanelContainer;
     [SerializeField] private PlayerPanel playerPanelPrefab;
 
@@ -36,13 +34,16 @@ public class UIManager : MonoBehaviour
 
     [SerializeField] private TextMeshProUGUI privateManipPeek;
 
+    [Header("Prompts")]
+    [SerializeField] private TextMeshProUGUI globalPrompt;
+    [SerializeField] private TextMeshProUGUI localPrompt;
+
     [Header("Face-Up Discards")]
     [SerializeField] private TextMeshProUGUI discard1;
     [SerializeField] private TextMeshProUGUI discard2;
 
     [Header("Bidding")]
     [SerializeField] private BiddingPanel biddingPanel;
-    [SerializeField] private TextMeshProUGUI biddingOrderPrompt; // “Player X, make a bid”
 
     [Header("Market Icons")]
     [SerializeField] private Sprite redStockIcon;
@@ -51,10 +52,12 @@ public class UIManager : MonoBehaviour
     [SerializeField] private Sprite yellowStockIcon;
 
     [Header("Character Selection")]
-    //[SerializeField] private GameObject selectionRoot;        // panel root
-    [SerializeField] private Transform characterSelectionPanel;   // grid/vertical group
+    [SerializeField] private Transform characterSelectionPanel;
     [SerializeField] private CharacterSelectionItem selectionItemPrefab;
-    [SerializeField] private TextMeshProUGUI selectionPrompt; // “Player X, choose your character”
+
+    [Header("Player Aid Panel")]
+    [SerializeField] private PlayerAidPanel playerAidPanel;
+    [SerializeField] private Button playerAidButton;
 
     private Dictionary<int, string> _playerNames = new Dictionary<int, string>();
 
@@ -64,8 +67,7 @@ public class UIManager : MonoBehaviour
         public Dictionary<StockType, int> stocks;
     }
 
-    private Dictionary<int, PendingPlayerState> _pendingPlayerStates =
-        new Dictionary<int, PendingPlayerState>();
+    private Dictionary<int, PendingPlayerState> _pendingPlayerStates = new Dictionary<int, PendingPlayerState>();
 
     private struct PendingSelection
     {
@@ -75,6 +77,9 @@ public class UIManager : MonoBehaviour
 
     private bool _hasPendingSelection;
     private PendingSelection _pendingSelection;
+
+    private bool _biddingActive;
+    public bool CanTogglePlayerAid => !_biddingActive;
 
     // A map from playerId → instantiated panel
     private Dictionary<int, PlayerPanel> _playerPanels = new Dictionary<int, PlayerPanel>();
@@ -181,8 +186,6 @@ public class UIManager : MonoBehaviour
 
                 if (isLocal)
                 {
-                    //panel.UpdateStocks(pData.stocks);
-                    // Stocks: we’ll hook proper syncing later
                     panel.UpdateStocks(new Dictionary<StockType, int>());
                 }
             }
@@ -191,7 +194,6 @@ public class UIManager : MonoBehaviour
 
     public void CreateMarketRows()
     {
-        // Clear existing
         foreach (Transform child in marketPanelContainer)
         {
             Destroy(child.gameObject);
@@ -201,7 +203,7 @@ public class UIManager : MonoBehaviour
         foreach (var stock in StockMarketManager.Instance.availableStocks)
         {
             var row = Instantiate(marketRowPrefab, marketPanelContainer);
-            // Determine icon based on stock type
+
             Sprite icon = stock switch
             {
                 StockType.Red => redStockIcon,
@@ -222,8 +224,6 @@ public class UIManager : MonoBehaviour
 
     private void HandlePriceChanged(StockType stock, int newPrice)
     {
-        Debug.Log($"[UI] PriceChanged {stock} -> {newPrice}"); // remove later
-
         if (_marketRows.TryGetValue(stock, out var row))
         {
             row.UpdatePrice(newPrice);
@@ -234,20 +234,20 @@ public class UIManager : MonoBehaviour
     {
         var lp = LocalNetPlayer;
         if (lp == null) 
-        {   
-            ShowMessage("No local network player.");
+        {
+            ShowLocalToast("No local network player.");
             return; 
         }
 
         if (_activePlayerId < 0)
         {
-            ShowMessage("Round hasn't started yet.");
+            ShowLocalToast("Round hasn't started yet.");
             return;
         }
 
         if (_localPlayerId != _activePlayerId)
         {
-            ShowMessage("Not your turn.");
+            ShowLocalToast("Not your turn.");
             return;
         }
 
@@ -259,19 +259,19 @@ public class UIManager : MonoBehaviour
         var lp = LocalNetPlayer;
         if (lp == null)
         {
-            ShowMessage("No local network player.");
+            ShowLocalToast("No local network player.");
             return;
         }
 
         if (_activePlayerId < 0)
         {
-            ShowMessage("Round hasn't started yet.");
+            ShowLocalToast("Round hasn't started yet.");
             return;
         }
 
         if (_localPlayerId != _activePlayerId)
         {
-            ShowMessage("Not your turn.");
+            ShowLocalToast("Not your turn.");
             return;
         }
 
@@ -283,19 +283,19 @@ public class UIManager : MonoBehaviour
         var lp = LocalNetPlayer;
         if (lp == null)
         {
-            ShowMessage("No local network player.");
+            ShowLocalToast("No local network player.");
             return;
         }
 
         if (_activePlayerId < 0)
         {
-            ShowMessage("Round hasn't started yet.");
+            ShowLocalToast("Round hasn't started yet.");
             return;
         }
 
         if (_localPlayerId != _activePlayerId)
         {
-            ShowMessage("Not your turn.");
+            ShowLocalToast("Not your turn.");
             return;
         }
 
@@ -317,8 +317,7 @@ public class UIManager : MonoBehaviour
         bool isLocalTurn = enable && (playerId == _localPlayerId);
 
         SetUndoButtonVisible(isLocalTurn);
-        //SetUndoButtonInteractable(isLocalTurn && TurnManager.Instance.CanUndoCurrentTurn);
-        SetUndoButtonInteractable(isLocalTurn); // always clickable now
+        SetUndoButtonInteractable(isLocalTurn);
 
         foreach (var row in _marketRows.Values)
         {
@@ -362,19 +361,19 @@ public class UIManager : MonoBehaviour
         var lp = LocalNetPlayer;
         if (lp == null)
         {
-            ShowMessage("No local network player.");
+            ShowLocalToast("No local network player.");
             return;
         }
 
         if (_activePlayerId < 0)
         {
-            ShowMessage("Round hasn't started yet.");
+            ShowLocalToast("Round hasn't started yet.");
             return;
         }
 
         if (_localPlayerId != _activePlayerId)
         {
-            ShowMessage("Not your turn.");
+            ShowLocalToast("Not your turn.");
             return;
         }
 
@@ -386,19 +385,19 @@ public class UIManager : MonoBehaviour
         var lp = LocalNetPlayer;
         if (lp == null)
         {
-            ShowMessage("No local network player.");
+            ShowLocalToast("No local network player.");
             return;
         }
 
         if (_activePlayerId < 0)
         {
-            ShowMessage("Round hasn't started yet.");
+            ShowLocalToast("Round hasn't started yet.");
             return;
         }
 
         if (_localPlayerId != _activePlayerId)
         {
-            ShowMessage("Not your turn.");
+            ShowLocalToast("Not your turn.");
             return;
         }
 
@@ -418,13 +417,6 @@ public class UIManager : MonoBehaviour
         characterImage.gameObject.SetActive(false);
     }
 
-    // Display generic messages
-    public void ShowMessage(string message)
-    {
-        // TODO: Implement popup or log
-        Debug.Log("[MSG] " + message);
-    }
-
     public void ShowBiddingPanel(bool show)
     {
         if (!biddingPanel) return;
@@ -435,6 +427,11 @@ public class UIManager : MonoBehaviour
     {
         if (!biddingPanel) return;
         biddingPanel.ResetForNewBidding(playerCount);
+
+        _biddingActive = true;
+
+        playerAidPanel.ForceHide();
+        playerAidButton.interactable = false;
     }
 
     public void Bidding_BeginTurn(string playerName, int playerMoney)
@@ -446,7 +443,7 @@ public class UIManager : MonoBehaviour
             var lp = LocalNetPlayer;
             if (lp == null)
             {
-                ShowMessage("No local network player.");
+                ShowLocalToast("No local network player.");
                 return;
             }
             lp.CmdSubmitBid(slotIndex);
@@ -476,7 +473,13 @@ public class UIManager : MonoBehaviour
     {
         if (!biddingPanel) return;
         biddingPanel.Close();
-        biddingOrderPrompt.gameObject.SetActive(false);
+
+        _biddingActive = false;
+
+        if (playerAidButton != null)
+        {
+            playerAidButton.interactable = true;
+        }
     }
 
     public void SetBidActivePlayer(int playerId)
@@ -488,17 +491,12 @@ public class UIManager : MonoBehaviour
             kv.Value.SetActiveHighlight(kv.Key == playerId);
         }
 
-        if (biddingOrderPrompt != null)
+        if (!_playerNames.TryGetValue(playerId, out pName) || string.IsNullOrEmpty(pName))
         {
-            biddingOrderPrompt.gameObject.SetActive(true);
-
-            if (!_playerNames.TryGetValue(playerId, out pName) || string.IsNullOrEmpty(pName))
-            {
-                pName = $"Player {playerId + 1}";
-            }
-
-            biddingOrderPrompt.text = $"{pName}, make a bid";
+            pName = $"Player {playerId + 1}";
         }
+
+        ShowLocalToast($"{pName}, make a bid");
     }
 
     public void ClearAllHighlights()
@@ -615,7 +613,7 @@ public class UIManager : MonoBehaviour
         bool isLocal = (actingPid == _localPlayerId);
         if (!isLocal) return; // only the acting local player sees this
 
-        ShowPrompt(promptText); // use global prompt (single label in your layout)
+        ShowLocalToast(promptText);
 
         manipulationChoicePanel.Show(actingPid, cards, onChosenOrCancelled);
     }
@@ -630,19 +628,18 @@ public class UIManager : MonoBehaviour
         bool isLocal = (actingPid == _localPlayerId);
         if (!isLocal) return;
 
-        ShowPrompt(promptText);
+        ShowLocalToast(promptText);
+
         stockTargetPanel.Show(
             actingPid,
             enabled,
             "", // hide panel-local prompt; we’re using the global one
             onChosen: s =>
             {
-                HidePrompt();
                 onChosen?.Invoke(s);
             },
             onCancelled: () =>
             {
-                HidePrompt();
                 onCancelled?.Invoke();
             });
     }
@@ -663,17 +660,13 @@ public class UIManager : MonoBehaviour
     {
         string pName = GetPlayerNameById(pickerPid);
 
-        if (selectionPrompt != null)
-        {
-            selectionPrompt.gameObject.SetActive(true);
-            selectionPrompt.text = $"{pName}, choose your character";
-        }
-
         if (!isLocal)
         {
             HideCharacterSelection();
             return;
         }
+
+        ShowLocalToast($"{pName}, choose your character");
 
         characterSelectionPanel.gameObject.SetActive(true);
         foreach (Transform c in characterSelectionPanel) Destroy(c.gameObject);
@@ -700,7 +693,6 @@ public class UIManager : MonoBehaviour
                     {
                         if (LocalNetPlayer == null)
                         {
-                            Debug.LogWarning("[SELECT] LocalNetPlayer is null, cannot send CmdConfirmCharacterSelection.");
                             return;
                         }
 
@@ -717,7 +709,6 @@ public class UIManager : MonoBehaviour
 
     public void HideCharacterSelection()
     {
-        selectionPrompt.gameObject.SetActive(false);
         characterSelectionPanel.gameObject.SetActive(false);
         foreach (Transform c in characterSelectionPanel) Destroy(c.gameObject);
     }
@@ -797,42 +788,25 @@ public class UIManager : MonoBehaviour
             privateManipPeek.gameObject.SetActive(false);
     }
 
-    public void ShowPrompt(string text)
-    {
-        if (!globalPrompt) return;
-        globalPrompt.gameObject.SetActive (true);
-        globalPrompt.text = text;
-        //globalPrompt.text = text ?? "";
-        //globalPrompt.gameObject.SetActive(!string.IsNullOrEmpty(text));
-    }
-
-    public void HidePrompt()
-    {
-        if (!globalPrompt) return;
-        globalPrompt.gameObject.SetActive(false);
-    }
-
     public void OnRoundStartUIReset()
     {
         foreach (var kv in _playerPanels) kv.Value.ClearPendingCloseAll();
     }
 
-
     public void ShowBankruptcyUI(StockType stock)
     {
         string text = $"{stock} stock went bankrupt";
-        ShowPrompt(text);
+        ShowGlobalBanner(text);
     }
 
     public void ShowCeilingUI(StockType stock)
     {
         string text = $"{stock} stock hit ceiling";
-        ShowPrompt(text);
+        ShowGlobalBanner(text);
     }
 
     public void SetLocalPlayerId(int pid)
     {
-        Debug.Log($"[UI] SetLocalPlayerId -> {pid}"); // REMOVE LATER
         _localPlayerId = pid;
 
         if (!_gameUiInitialized && _cachedIds != null)
@@ -872,18 +846,14 @@ public class UIManager : MonoBehaviour
             _hasPendingSelection = false;
 
             bool isLocal = (pid == ps.pickerPid);
-            Debug.Log($"[SELECTION] Consuming pending selection: picker={ps.pickerPid}, isLocal={isLocal}");
 
             ShowCharacterSelection(ps.pickerPid, ps.optionIds, isLocal);
         }
-
-        ShowMessage($"You are Player {pid + 1}.");
     }
 
     public void InitializeGameUI(int[] ids, string[] names, int[] money)
     {
         int playerCount = ids.Length;
-        Debug.Log($"[UI] InitializeGameUI players={playerCount}, local={_localPlayerId}");
 
         _cachedIds = (int[])ids.Clone();
         _cachedNames = (string[])names.Clone();
@@ -891,7 +861,6 @@ public class UIManager : MonoBehaviour
 
         if (_localPlayerId < 0)
         {
-            Debug.Log("[UI] there is no local player id yet.");
             return;
         }
 
@@ -902,23 +871,15 @@ public class UIManager : MonoBehaviour
     {
         if (_cachedIds == null) return;
 
-        Debug.Log($"[UI] BuildGameUI using local={_localPlayerId}");
-
         CreatePlayerPanels(_cachedIds, _cachedNames, _cachedMoney);
         CreateMarketRows();
         HideAllUndoButtons();
-        // gerekiyorsa diğer UI setup fonksiyonların...
-        // CreateQuestsUI();
-        // CreateCharacterCardsUI();
-        // vs.
 
         _gameUiInitialized = true;
     }
 
     public void InitializeLocalPlayerUI(int pid)
     {
-        Debug.Log($"[UI] InitializeLocalPlayerUI pid={pid}");
-
         SetLocalPlayerId(pid);
     }
     public void SyncPlayerState(int pid, int money, Dictionary<StockType, int> stocks, Dictionary<StockType, int> pendingClose)
@@ -956,6 +917,42 @@ public class UIManager : MonoBehaviour
             panel.UpdateStocks(stocks);
         }
     }
+
+    public void ShowLocalToast(string msg, float duration = 5f)
+    {
+        localPrompt.gameObject.SetActive(true);
+        localPrompt.text = msg;
+
+        StopCoroutine(nameof(HideToastCo));
+        StartCoroutine(HideToastCo(duration));
+    }
+
+    private IEnumerator HideToastCo(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        localPrompt.gameObject.SetActive(false);
+    }
+
+    public void ShowGlobalBanner(string msg, float duration = 3f)
+    {
+        globalPrompt.gameObject.SetActive(true);
+        globalPrompt.text = msg;
+
+        StopCoroutine (nameof(HideGlobalCo));
+        StartCoroutine(HideGlobalCo(duration));
+    }
+
+    private IEnumerator HideGlobalCo(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        globalPrompt.gameObject.SetActive(false);
+    }
+
+    public void HideGlobalBanner()
+    {
+        globalPrompt.gameObject.SetActive(false);
+    }
+
 
     private NetPlayer LocalNetPlayer =>
         Mirror.NetworkClient.isConnected ? Mirror.NetworkClient.localPlayer?.GetComponent<NetPlayer>() : null;

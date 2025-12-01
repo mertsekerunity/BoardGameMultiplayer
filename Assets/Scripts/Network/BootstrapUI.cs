@@ -14,6 +14,7 @@ public class BootstrapUI : MonoBehaviour
     [Header("Player Count Toggles (Host only)")]
     [SerializeField] private GameObject playerCountPanel;
     [SerializeField] private ToggleGroup playerCountGroup;
+    [SerializeField] private Toggle toggle3;
     [SerializeField] private Toggle toggle4;
     [SerializeField] private Toggle toggle5;
     [SerializeField] private Toggle toggle6;
@@ -169,7 +170,8 @@ public class BootstrapUI : MonoBehaviour
         if (toggle6 != null && toggle6.isOn) return 6;
         if (toggle5 != null && toggle5.isOn) return 5;
         if (toggle4 != null && toggle4.isOn) return 4;
+        if (toggle3 != null && toggle3.isOn) return 3;
 
-        return 4;
+        return 2;
     }
 }

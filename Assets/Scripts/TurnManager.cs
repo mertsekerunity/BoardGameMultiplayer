@@ -175,8 +175,6 @@ public class TurnManager : NetworkBehaviour
     [Server]
     public void StartDiscardPhase()
     {
-        Debug.Log("Discard Phase started.");
-
         int playerCount = PlayerManager.Instance.players.Count;
         int discardCount = maxCharacters - (playerCount + 1);
 
@@ -202,8 +200,6 @@ public class TurnManager : NetworkBehaviour
     [Server]
     public void StartBiddingPhase()
     {
-        Debug.Log("Bidding Phase started.");
-
         biddingOrder = PlayerManager.Instance.players.OrderBy(p => p.money).Select(p => p.id).ToList();
 
         _playerBids.Clear();
@@ -241,10 +237,6 @@ public class TurnManager : NetworkBehaviour
                 // only that client's UI becomes interactive
                 netPlayer.TargetBeginBidTurn(p.playerName, p.money);
             }
-            else
-            {
-                Debug.LogError($"[BIDDING] No NetPlayer for pid={pid}");
-            }
 
             // Wait for that player to pick a circle (SubmitBid_Server sets _biddingWaiting=false)
             while (_biddingWaiting)
@@ -266,16 +258,13 @@ public class TurnManager : NetworkBehaviour
 
         // hide panel on all clients
         RpcBiddingClose();
+        RpcShowGlobalBanner("Bidding final order: " + string.Join(", ", selectionOrder.Select(id => $"P{id}")));
         BiddingFinished?.Invoke();
-
-        Debug.Log("[BIDDING] Final order: " + string.Join(", ", selectionOrder.Select(id => $"P{id}")));
     }
 
     [Server]
     public void StartCharacterSelectionPhase()
     {
-        Debug.Log("Character Selection Phase started.");
-
         // Don’t run two selection loops
         if (_selectionCo != null) StopCoroutine(_selectionCo);
         _selectionCo = StartCoroutine(SelectionPhaseLoop());
@@ -310,8 +299,6 @@ public class TurnManager : NetworkBehaviour
     [Server]
     public void StartMainPhase()
     {
-        Debug.Log("Main Phase started.");
-
         if (_mainPhaseCo != null)
         {
             StopCoroutine(_mainPhaseCo);
@@ -401,12 +388,11 @@ public class TurnManager : NetworkBehaviour
         {
             var card = characterDeck.FirstOrDefault(c => (int)c.characterNumber == id);
             if (card != null)
+            {
                 list.Add(card);
-            else
-                Debug.LogWarning($"[DISCARD] Could not find character with id={id} in characterDeck.");
+            }
         }
 
-        Debug.Log($"[DISCARD] ShowFaceUpDiscards on client, count={list.Count}");
         UIManager.Instance.ShowFaceUpDiscards(list);
     }
 
@@ -419,7 +405,6 @@ public class TurnManager : NetworkBehaviour
         var card = characterDeck.FirstOrDefault(c => (int)c.characterNumber == cardId);
         if (card == null)
         {
-            Debug.LogWarning($"[TURN] RpcShowActiveCharacter: could not find card id={cardId} in characterDeck");
             return;
         }
 
@@ -435,9 +420,6 @@ public class TurnManager : NetworkBehaviour
         var card = characterDeck.FirstOrDefault(c => (int)c.characterNumber == cardId);
         if (card == null)
         {
-            Debug.LogWarning($"[TURN] RpcHideActiveCharacter: could not find card id={cardId} in characterDeck");
-            // HideCharacter kartı kullanmıyorsa sadece paneli kapatmak için
-            // overload varsa ona göre çağırabilirsin.
             return;
         }
 
@@ -599,12 +581,8 @@ public class TurnManager : NetworkBehaviour
         if (p.money < payPrice) return false;
 
         // Do the actual buy at CURRENT price; market will tick up
-        bool ok = PlayerManager.Instance.TryBuyStock(ActivePlayerId, stock);
+        bool ok = PlayerManager.Instance.TryBuyStock(ActivePlayerId, stock, payPrice);
         if (!ok) return false;
-
-        // Refund the difference so net paid == anchored (bulk pricing / Trader)
-        int refunded = current - payPrice;
-        if (refunded > 0) PlayerManager.Instance.AddMoney(ActivePlayerId, refunded);
 
         _history.Push(new TurnHistoryEntry { type = TurnActionType.Buy, stock = stock });
         _buyUsed++;
@@ -765,18 +743,29 @@ public class TurnManager : NetworkBehaviour
 
         BlockCharacter(targetCharacterNumber);
 
-        Debug.Log($"[BLOCKER] #{targetCharacterNumber} is now blocked.");
+        RpcShowGlobalBanner($"#{targetCharacterNumber} is now blocked.");
+
         return true;
     }
 
     [Server]
     private bool Server_TryUseThief(int actingPid, int targetCharacterNumber)
     {
-        if (targetCharacterNumber == 1) //cant target blocker #1
-            return false;
+        var nm = NetworkManager.singleton as CustomNetworkManager;
+        var np = nm?.GetPlayerByPid(ActivePlayerId);
+        var p = PlayerManager.Instance.players.First(pp => pp.id == actingPid);
 
-        if (IsCharacterBlocked(targetCharacterNumber)) //cant steal from blocked target
+        if (targetCharacterNumber == 1)
+        {
+            np.TargetToast("Can not target #1");
             return false;
+        }
+
+        if (IsCharacterBlocked(targetCharacterNumber))
+        {
+            np.TargetToast("Can not steal from someone already blocked");
+            return false;
+        }
 
         if (GetPidByCharacterNumber(targetCharacterNumber) is not int victimPid)
             return false;
@@ -794,7 +783,8 @@ public class TurnManager : NetworkBehaviour
 
         ScheduleThiefPayout(thiefPid: actingPid, victimPid: victimPid, amount: stealAmount);
 
-        Debug.Log($"[THIEF] P{actingPid} will steal {stealAmount}$ from P{victimPid} at end of round.");
+        RpcShowGlobalBanner($"{p.playerName} will steal from #{targetCharacterNumber}.");
+
         return true;
     }
 
@@ -1310,7 +1300,6 @@ public class TurnManager : NetworkBehaviour
         var np = nm?.GetPlayerByPid(pickerPid);
         if (np == null)
         {
-            Debug.LogError($"[TAX] No NetPlayer for pid={pickerPid}");
             onCancelled?.Invoke();
             return;
         }
@@ -1738,7 +1727,6 @@ public class TurnManager : NetworkBehaviour
 
         if (np == null)
         {
-            Debug.LogError($"[TARGET] No NetPlayer for pid={actingPid}");
             onCancelled?.Invoke();
             return;
         }
@@ -1949,11 +1937,8 @@ public class TurnManager : NetworkBehaviour
 
         if (chosen == null)
         {
-            Debug.LogWarning($"[Server_ConfirmCharacterSelection] No character with id={cardId} in current options.");
             return;
         }
-
-        Debug.Log($"[SELECT] Confirmed pid={pid} -> #{(int)chosen.characterNumber}-{chosen.characterName}");
 
         characterAssignments[chosen] = pid;
         _selectionOptions.Remove(chosen);
@@ -1973,7 +1958,6 @@ public class TurnManager : NetworkBehaviour
         if (UIManager.Instance.LocalPlayerId <0)
         {
             UIManager.Instance.CachePendingSelection(pickerPid, optionIds);
-            Debug.Log($"[SELECTION] Cached pending selection: picker={pickerPid}");
             return;
         }
 
@@ -2044,6 +2028,12 @@ public class TurnManager : NetworkBehaviour
 
     [Server]
     public void Server_NotifyCeiling(StockType stock) => RpcShowCeiling(stock);
+
+    [ClientRpc]
+    public void RpcShowGlobalBanner(string msg)
+    {
+        UIManager.Instance.ShowGlobalBanner(msg);
+    }
 
     [Server]
     public void CleanupRound()
