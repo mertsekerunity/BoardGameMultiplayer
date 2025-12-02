@@ -851,6 +851,14 @@ public class UIManager : MonoBehaviour
         }
     }
 
+    public void UpdatePlayerName(int pid, string newName)
+    {
+        if (_playerPanels != null && _playerPanels.TryGetValue(pid, out var panel))
+        {
+            panel.SetPlayerName(newName);
+        }
+    }
+
     public void InitializeGameUI(int[] ids, string[] names, int[] money)
     {
         int playerCount = ids.Length;

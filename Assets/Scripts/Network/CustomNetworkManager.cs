@@ -8,7 +8,7 @@ public class CustomNetworkManager : NetworkManager
 
     public int requiredPlayers;
 
-    [HideInInspector] public string pendingPlayerName = "Player"; // TODO: remote name sync later
+    [HideInInspector] public string pendingPlayerName = null;
 
     private int nextPid = 0;
     private readonly Dictionary<NetworkConnectionToClient, NetPlayer> connToPlayer = new();
@@ -26,7 +26,6 @@ public class CustomNetworkManager : NetworkManager
 
     public void SetRequiredPlayers(int count)
     {
-        //requiredPlayers = Mathf.Clamp(count, 2, 6);
         requiredPlayers = count;
     }
 
@@ -53,8 +52,7 @@ public class CustomNetworkManager : NetworkManager
         np.pid = nextPid++;
         connToPlayer[conn] = np;
 
-        // tell PlayerManager about this player (Server side)
-        PlayerManager.Instance.RegisterNetworkPlayer(np.pid); // ask players to type name while joining
+        PlayerManager.Instance.RegisterNetworkPlayer(np.pid);
 
         Debug.Log($"[NET] Player joined. pid={np.pid}");
 

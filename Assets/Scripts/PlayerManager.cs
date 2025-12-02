@@ -54,6 +54,17 @@ public class PlayerManager : MonoBehaviour
     }
 
     [Server]
+    public void SetPlayerName(int pid, string newName)
+    {
+        var p = players.FirstOrDefault(x => x.id == pid);
+
+        if (p != null)
+        {
+            p.playerName = newName.Trim();
+        }
+    }
+
+    [Server]
     public void Server_GiveInitialStocks(int perPlayer = 3)
     {
         var available = StockMarketManager.Instance.availableStocks;

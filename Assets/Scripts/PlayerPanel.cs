@@ -2,6 +2,7 @@
 using UnityEngine.UI;
 using System.Collections.Generic;
 using TMPro;
+//using UnityEditor.SceneManagement;
 
 public class PlayerPanel : MonoBehaviour
 {
@@ -36,7 +37,7 @@ public class PlayerPanel : MonoBehaviour
     [SerializeField] private Button abilityButton;
     [SerializeField] private Button endTurnButton;
 
-    [SerializeField] private Image activeGlow; // optional overlay in prefab
+    [SerializeField] private Image activeGlow;
 
     public void Initialize(int id, string playerName, bool isLocal)
     {
@@ -46,7 +47,6 @@ public class PlayerPanel : MonoBehaviour
         // Only show stocks for the local player
         stocksContainer.SetActive(isLocal);
 
-        // Undo button only exists / is visible on the local panel
         SetUndoVisible(isLocal);
     
         if (isLocal && undoButton)
@@ -65,6 +65,11 @@ public class PlayerPanel : MonoBehaviour
         SetEndTurnButtonInteractable(false);
 
         ClearPendingCloseAll();
+    }
+
+    public void SetPlayerName(string newName)
+    {
+        nameText.text = newName;
     }
 
     public void UpdateMoney(int amount)

@@ -614,7 +614,7 @@ MonoBehaviour:
   evaluationInterval: 3
   timeInterpolationGui: 0
   requiredPlayers: 4
-  pendingPlayerName: Player
+  pendingPlayerName: 
 --- !u!1 &225418065
 GameObject:
   m_ObjectHideFlags: 0

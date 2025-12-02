@@ -14,6 +14,11 @@ public class NetPlayer : NetworkBehaviour
     public override void OnStartLocalPlayer()
     {
         base.OnStartLocalPlayer();
+
+        //string desiredName = ClientPlayerConfig.PlayerName;
+        string desiredName = CustomNetworkManager.Instance.pendingPlayerName;
+
+        CmdSetPlayerName(desiredName);
     }
 
     void OnPidChanged(int oldValue, int newValue)
@@ -25,6 +30,21 @@ public class NetPlayer : NetworkBehaviour
     }
 
     // ================== Commands (UI -> Server) ==================
+
+    [Command]
+    private void CmdSetPlayerName(string rawName)
+    {
+        string finalName = string.IsNullOrWhiteSpace(rawName)
+            ? $"Player {pid + 1}"
+            : rawName.Trim();
+
+        PlayerManager.Instance.SetPlayerName(pid, finalName);
+
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.Server_SyncPlayerName(pid, finalName);
+        }
+    }
 
     [Command]
     public void CmdBuy(StockType stock)

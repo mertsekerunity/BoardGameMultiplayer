@@ -246,6 +246,18 @@ public class GameManager : NetworkBehaviour
         RpcSyncRoundAndLottery(round, lottery);
     }
 
+    [Server]
+    public void Server_SyncPlayerName(int pid, string newName)
+    {
+        RpcSyncPlayerName(pid, newName);
+    }
+
+    [ClientRpc]
+    private void RpcSyncPlayerName(int pid, string newName)
+    {
+        UIManager.Instance.UpdatePlayerName(pid, newName);
+    }
+
     [ClientRpc]
     private void RpcSyncRoundAndLottery(int round, int lottery)
     {

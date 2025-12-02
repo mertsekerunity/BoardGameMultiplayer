@@ -108,10 +108,11 @@ public class BootstrapUI : MonoBehaviour
         }
 
         string playerName = string.IsNullOrWhiteSpace(nameInput?.text)
-            ? "Player"
+            ? null
             : nameInput.text.Trim();
 
         nm.pendingPlayerName = playerName;
+        //ClientPlayerConfig.PlayerName = playerName;
 
         int selectedCount = GetSelectedPlayerCount();
         nm.SetRequiredPlayers(selectedCount);
@@ -147,10 +148,11 @@ public class BootstrapUI : MonoBehaviour
         }
 
         string playerName = string.IsNullOrWhiteSpace(nameInput.text)
-            ? "Player"
+            ? null
             : nameInput.text.Trim();
 
-        nm.pendingPlayerName = playerName; // TODO: use with CmdSetPlayerName 
+        nm.pendingPlayerName = playerName;
+        //ClientPlayerConfig.PlayerName = playerName;
 
         if (!string.IsNullOrWhiteSpace(addressInput.text))
         {
