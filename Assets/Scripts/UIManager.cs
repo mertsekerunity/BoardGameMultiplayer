@@ -81,14 +81,13 @@ public class UIManager : MonoBehaviour
     private bool _biddingActive;
     public bool CanTogglePlayerAid => !_biddingActive;
 
-    // A map from playerId → instantiated panel
     private Dictionary<int, PlayerPanel> _playerPanels = new Dictionary<int, PlayerPanel>();
     private Dictionary<StockType, MarketRow> _marketRows = new Dictionary<StockType, MarketRow>();
 
     private int _localPlayerId = -1;
     private int _activePlayerId = -1;
 
-    public int LocalPlayerId => _localPlayerId;  // read-only accessor
+    public int LocalPlayerId => _localPlayerId;
     public bool HasLocalPlayer => _localPlayerId >= 0;
 
     private int[] _cachedIds;
@@ -105,7 +104,6 @@ public class UIManager : MonoBehaviour
             return;
         }
         Instance = this;
-        //DontDestroyOnLoad(transform.root.gameObject); //didnt work with mirror, still dont know why.
     }
 
     void Start()
@@ -113,7 +111,6 @@ public class UIManager : MonoBehaviour
         SetUndoButtonVisible(false);
         SetUndoButtonInteractable(false);
 
-        // Subscribe to events
         StockMarketManager.Instance.OnStockPriceChanged += HandlePriceChanged;
     }
 
@@ -140,7 +137,6 @@ public class UIManager : MonoBehaviour
     public void CreatePlayerPanels(int[] ids, string[] names, int[] money)
     {
         int playerCount = ids.Length;
-        Debug.Log($"[UI] CreatePlayerPanels: players={playerCount}, local={_localPlayerId}"); // REMOVE LATER
 
         foreach (Transform child in playersPanelContainer)
         {
@@ -212,7 +208,7 @@ public class UIManager : MonoBehaviour
                 StockType.Yellow => yellowStockIcon,
                 _ => null
             };
-            // Initialize buy-only with icon
+
             row.Initialize(stock, icon, OnBuyStock);
 
             int starting = StockMarketManager.Instance.stockPrices[stock];
@@ -404,7 +400,6 @@ public class UIManager : MonoBehaviour
         LocalNetPlayer.CmdEndTurn();
     }
 
-    // Show character card and player name when turn starts
     public void ShowCharacter(CharacterCardSO card, int playerId)
     {
         characterImage.sprite = card.characterSprite;
@@ -518,15 +513,15 @@ public class UIManager : MonoBehaviour
         var cg = characterTargetPanel.GetComponent<CanvasGroup>();
         if (cg)
         {
-            cg.alpha = isLocal ? 1f : 0f;           // hide from non-local clients
-            cg.interactable = isLocal;              // block clicks
-            cg.blocksRaycasts = isLocal;            // block pointer hits
+            cg.alpha = isLocal ? 1f : 0f;           
+            cg.interactable = isLocal;              
+            cg.blocksRaycasts = isLocal;            
         }
 
         if (isLocal)
             characterTargetPanel.Show(enabled, disabled, onChosen);
         else
-            characterTargetPanel.Hide();            // ensure it’s not visible here
+            characterTargetPanel.Hide();            
     }
 
     public void HideCharacterTargetPanel()
@@ -537,7 +532,7 @@ public class UIManager : MonoBehaviour
 
     public void ShowFaceUpDiscards(List<CharacterCardSO> cards)
     {
-        HideFaceUpDiscards(); // clear first
+        HideFaceUpDiscards();
 
         if (cards.Count > 0)
         {
@@ -560,17 +555,13 @@ public class UIManager : MonoBehaviour
 
     public void ShowSelectionConfirm(int actingPid, string message, Action onYes, Action onNo)
     {
-        // During selection you usually want *only the picker* to confirm.
         bool allow = (actingPid == _localPlayerId);
-        //bool allow = (actingPid == _localPlayerId);
         ShowConfirm(allow, message, onYes, onNo, tag: "SELECT");
     }
 
     public void ShowAbilityConfirm(int actingPid, string message, Action onYes, Action onNo)
     {
-        // During abilities, only the acting player should confirm.
         bool allow = (actingPid == _localPlayerId);
-        //bool allow = (actingPid == _localPlayerId);
         ShowConfirm(allow, message, onYes, onNo, tag: "ABILITY");
     }
 
@@ -579,7 +570,6 @@ public class UIManager : MonoBehaviour
         if (!confirmationPanel) {return; }
 
         confirmationPanel.gameObject.SetActive(true);
-        //confirmationPanel.transform.SetAsLastSibling(); // bring on top
 
         if (confirmText) confirmText.text = message;
 
@@ -611,7 +601,7 @@ public class UIManager : MonoBehaviour
         Action<ManipulationType, ManipulationType, ManipulationType, ManipulationType> onChosenOrCancelled)
     {
         bool isLocal = (actingPid == _localPlayerId);
-        if (!isLocal) return; // only the acting local player sees this
+        if (!isLocal) return;
 
         ShowLocalToast(promptText);
 
@@ -633,7 +623,7 @@ public class UIManager : MonoBehaviour
         stockTargetPanel.Show(
             actingPid,
             enabled,
-            "", // hide panel-local prompt; we’re using the global one
+            "",
             onChosen: s =>
             {
                 onChosen?.Invoke(s);
@@ -819,7 +809,6 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        // retag panels so only your seat is interactive on your turn
         foreach (var kv in _playerPanels)
         {
             int panelPid = kv.Key;
@@ -831,14 +820,10 @@ public class UIManager : MonoBehaviour
             panel.SetEndTurnButtonInteractable(isLocal);
         }
 
-        // if a turn is already active, recompute interactivity
         if (_activePlayerId >= 0)
         {
             SetActivePlayer(_activePlayerId, enable: true);
         }
-
-        // refresh local panel snapshot 
-        //we need new rpc to refresh local panel snapshot later !!!
 
         if (_hasPendingSelection)
         {

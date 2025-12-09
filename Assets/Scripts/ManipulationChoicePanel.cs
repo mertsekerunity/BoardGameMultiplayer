@@ -13,17 +13,13 @@ public class ManipulationChoicePanel : MonoBehaviour
     [SerializeField] private TextMeshProUGUI labelB;
     [SerializeField] private TextMeshProUGUI labelC;
     [SerializeField] private Button cancelBtn;
-    //[SerializeField] private TextMeshProUGUI prompt;
 
     private ManipulationType _a, _b, _c;
-    private Action<ManipulationType, ManipulationType, ManipulationType, ManipulationType> _onDone; // chosen, discard, return, cancelSentinel
+    private Action<ManipulationType, ManipulationType, ManipulationType, ManipulationType> _onDone;
 
     public void Show(int actingPid, List<ManipulationType> drawn,
         Action<ManipulationType, ManipulationType, ManipulationType, ManipulationType> onDone)
     {
-        //prompt.gameObject.SetActive(true);
-        //if (prompt) prompt.text = $"{PlayerManager.Instance.players[actingPid].playerName}, choose a manipulation";
-
         gameObject.SetActive(true);
         _onDone = onDone;
 

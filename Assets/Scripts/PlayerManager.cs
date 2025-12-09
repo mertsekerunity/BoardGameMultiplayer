@@ -31,12 +31,10 @@ public class PlayerManager : MonoBehaviour
             return;
         }
         Instance = this;
-        //DontDestroyOnLoad(transform.root.gameObject); //didnt work with mirror, still dont know why.
     }
 
     public Player RegisterNetworkPlayer(int pid, string name = null)
     {
-        // Avoid duplicates if something weird happens
         var existing = players.FirstOrDefault(p => p.id == pid);
         if (existing != null)
             return existing;
@@ -162,7 +160,6 @@ public class PlayerManager : MonoBehaviour
         }
         else
         {
-            // Close sell: card stays in hand (hidden), money later, price later
             if (!_pendingCloseSells.TryGetValue(playerId, out var map))
             {
                 map = new Dictionary<StockType, int>();
@@ -203,14 +200,12 @@ public class PlayerManager : MonoBehaviour
             {
                 var stock = sv.Key;
                 int count = sv.Value;
-                // Remove the sold copies from hand now
                 RemoveStock(pid, stock, count);
             }
         }
         _pendingCloseSells.Clear();
     }
 
-    // Helper to query pending count for UI
     public int GetPendingCloseCount(int playerId, StockType stock)
     {
         if (_pendingCloseSells.TryGetValue(playerId, out var map) &&
@@ -269,7 +264,6 @@ public class PlayerManager : MonoBehaviour
                 int add = priceNow * count;
                 if (add > 0) AddMoney(p.id, add);
 
-                // zero the holding
                 if (count > 0) RemoveStock(p.id, stock, count);
                 gained += add;
             }

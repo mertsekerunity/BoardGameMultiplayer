@@ -2,11 +2,10 @@
 using UnityEngine.UI;
 using System.Collections.Generic;
 using TMPro;
-//using UnityEditor.SceneManagement;
 
 public class PlayerPanel : MonoBehaviour
 {
-    [HideInInspector] public int playerId;    // assigned at runtime
+    [HideInInspector] public int playerId;
 
     [SerializeField] private Button redOpenSellButton;
     [SerializeField] private Button redCloseSellButton;
@@ -44,7 +43,6 @@ public class PlayerPanel : MonoBehaviour
         playerId = id;
         nameText.text = playerName;
 
-        // Only show stocks for the local player
         stocksContainer.SetActive(isLocal);
 
         SetUndoVisible(isLocal);
@@ -59,7 +57,6 @@ public class PlayerPanel : MonoBehaviour
         SetupAbilityButton(isLocal);
         SetupEndTurnButton(isLocal);
 
-        // Default: disabled until it's this player's turn
         SetSellButtonsInteractable(false);
         SetAbilityButtonInteractable(false);
         SetEndTurnButtonInteractable(false);
@@ -79,7 +76,6 @@ public class PlayerPanel : MonoBehaviour
 
     private void SetupSellButtons(bool isLocal)
     {
-        // Only local player gets sell buttons visible
         void Show(Button b)
         {
             if (b)
@@ -98,7 +94,6 @@ public class PlayerPanel : MonoBehaviour
 
         if (!isLocal) return;
 
-        // Wire up callbacks to the central UIManager → TurnManager
         void Bind(Button btn, StockType type, bool open)
         {
             if (!btn) return;
@@ -149,7 +144,6 @@ public class PlayerPanel : MonoBehaviour
 
     public void SetSellButtonsInteractable(bool interactable)
     {
-        // enable/disable only the local player's sell buttons
         redOpenSellButton.interactable = interactable;
         redCloseSellButton.interactable = interactable;
         greenOpenSellButton.interactable = interactable;

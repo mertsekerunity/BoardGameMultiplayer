@@ -8,9 +8,9 @@ using UnityEngine.UI;
 public class BiddingOption
 {
     public Button button;
-    public TextMeshProUGUI chosenByLabel; // text that will show the player's name under the circle
-    public int amount;                    // e.g. +1, 0, -3, -10 etc.
-    public bool requiresAtLeast5Players;  // gate for the special +1 circle when >=5 players
+    public TextMeshProUGUI chosenByLabel; 
+    public int amount;                    
+    public bool requiresAtLeast5Players;  
 
     [HideInInspector] public bool taken = false;
 
@@ -24,9 +24,8 @@ public class BiddingPanel : MonoBehaviour
     [Header("Circles (configure in Inspector)")]
     [SerializeField] private List<BiddingOption> options = new();
 
-    private Action<int> _onBidChosen;     // callback to TurnManager (slotIndex)
+    private Action<int> _onBidChosen;     
     
-    // reserved for future UI
     private string _currentPlayerName = "";
     private int _currentPlayerMoney = 0;
     private int _playerCount = 0;
@@ -36,7 +35,6 @@ public class BiddingPanel : MonoBehaviour
         _getPlayerColor = getPlayerColor;
     }
 
-    // Call once at the start of the bidding phase.
     public void ResetForNewBidding(int playerCount)
     {
         _playerCount = playerCount;
@@ -53,19 +51,16 @@ public class BiddingPanel : MonoBehaviour
                 opt.chosenByLabel.gameObject.SetActive(false);
             }
                 
-
-            // Show/hide gated option; keep others visible
             bool visible = !opt.requiresAtLeast5Players || playerCount >= 5;
 
-            // (Re)bind click
             if (opt.button)
             {
                 opt.button.gameObject.SetActive(visible);
 
                 opt.button.onClick.RemoveAllListeners();
-                var captured = opt; // capture by value for the lambda
+                var captured = opt;
                 opt.button.onClick.AddListener(() => OnOptionClicked(captured));
-                opt.button.interactable = false; //
+                opt.button.interactable = false;
             }
         }
         gameObject.SetActive(true);
@@ -95,7 +90,6 @@ public class BiddingPanel : MonoBehaviour
     {
         if (opt.taken) return;
 
-        // Disable all buttons so the current player cannot click twice
         foreach (var o in options)
         {
             if (o.button && o.button.gameObject.activeSelf)

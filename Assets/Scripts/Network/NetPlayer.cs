@@ -2,8 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Mirror;
-using Unity.VisualScripting;
-using UnityEngine;
+
 
 public class NetPlayer : NetworkBehaviour
 {
@@ -15,7 +14,6 @@ public class NetPlayer : NetworkBehaviour
     {
         base.OnStartLocalPlayer();
 
-        //string desiredName = ClientPlayerConfig.PlayerName;
         string desiredName = CustomNetworkManager.Instance.pendingPlayerName;
 
         CmdSetPlayerName(desiredName);
@@ -28,8 +26,6 @@ public class NetPlayer : NetworkBehaviour
 
         UIManager.Instance.SetLocalPlayerId(newValue);
     }
-
-    // ================== Commands (UI -> Server) ==================
 
     [Command]
     private void CmdSetPlayerName(string rawName)
@@ -209,7 +205,7 @@ public class NetPlayer : NetworkBehaviour
         var candidates = new HashSet<StockType>(stockTypeIds.Select(id => (StockType)id));
 
         UIManager.Instance.ShowStockTargetPanel(
-            pid,          // NetPlayer's pid
+            pid,          
             candidates,
             prompt,
             onChosen: stock =>
@@ -286,7 +282,7 @@ public class NetPlayer : NetworkBehaviour
         UIManager.Instance.ShowLocalToast(prompt);
 
         UIManager.Instance.ShowCharacterTargetPanel(
-            pid,            // NetPlayer's pid
+            pid,            
             enabled,
             disabled,
             onChosen: num =>

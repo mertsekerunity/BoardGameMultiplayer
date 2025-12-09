@@ -22,7 +22,7 @@ public class StockMarketManager : MonoBehaviour
     {
         public int playerId;
         public StockType stock;
-        public int price; // anchored gain locked on seller’s turn
+        public int price;
         public int basePriceAtQueue;
     }
     private readonly List<CloseSale> _pendingCloseSales = new();
@@ -30,17 +30,17 @@ public class StockMarketManager : MonoBehaviour
     private struct BankruptcyRecord
     {
         public bool active;
-        public int preSalePrice; // price just before the open sale
-        public Dictionary<int, int> destroyedByPlayer; // pid -> count destroyed
+        public int preSalePrice;
+        public Dictionary<int, int> destroyedByPlayer;
     }
     private readonly Dictionary<StockType, BankruptcyRecord> _lastBankruptcy = new();
 
     private struct CeilingRecord
     {
         public bool active;
-        public int preBuyPrice;                          // price just before the buy
-        public Dictionary<int, int> destroyedByPlayer;   // pid -> count destroyed
-        public Dictionary<int, int> payoutByPlayer;      // pid -> cash paid for ceiling
+        public int preBuyPrice;                          
+        public Dictionary<int, int> destroyedByPlayer;   
+        public Dictionary<int, int> payoutByPlayer;      
     }
 
     private readonly Dictionary<StockType, CeilingRecord> _lastCeiling = new();
@@ -53,10 +53,8 @@ public class StockMarketManager : MonoBehaviour
             return;
         }
         Instance = this;
-        //DontDestroyOnLoad(transform.root.gameObject); //didnt work with mirror, still dont know why.
     }
 
-    // Initialize market with 3 stocks for <=4 players, else 4 stocks
     [Server]
     public void SetupMarket(int playerCount)
     {
@@ -66,44 +64,39 @@ public class StockMarketManager : MonoBehaviour
 
         stockPrices = availableStocks.ToDictionary(s => s, _ => startingPrice);
 
-        // Notify initial prices
         foreach (var s in availableStocks)
         {
             OnStockPriceChanged?.Invoke(s, startingPrice);
         }
     }
 
-    // Convenience
     public int GetPrice(StockType stock) => stockPrices.TryGetValue(stock, out var p) ? p : startingPrice;
 
-    // Immediate buy: +1 and ceiling check
     [Server]
     public void BuyStock(StockType stock)
     {
-        int before = stockPrices[stock]; // pre-buy price
+        int before = stockPrices[stock];
         int after = Mathf.Clamp(before + 1, minPrice, maxPrice);
         stockPrices[stock] = after;
         OnStockPriceChanged?.Invoke(stock, after);
 
-        CheckCeilingAfterBuy(stock, before); // << recordable path for Undo
+        CheckCeilingAfterBuy(stock, before);
     }
 
-    // Immediate open sale: -1 and bankruptcy check
     [Server]
     public void SellStock(StockType stock, bool openSale)
     {
         if (openSale)
         {
-            int before = stockPrices[stock]; // pre-sale price
+            int before = stockPrices[stock];
             int after = Mathf.Clamp(before - 1, minPrice, maxPrice);
             stockPrices[stock] = after;
             OnStockPriceChanged?.Invoke(stock, after);
 
-            CheckBankruptcyAfterOpenSell(stock, before); // << pass pre-sale
+            CheckBankruptcyAfterOpenSell(stock, before);
         }
     }
 
-    // Queue a close sale to resolve end-of-round
     [Server]
     public void QueueCloseSale(int playerId, StockType stock, int anchoredGain, int basePriceAtQueue)
     {
@@ -116,7 +109,6 @@ public class StockMarketManager : MonoBehaviour
         });
     }
 
-    // Undo helper
     [Server]
     public bool RemoveQueuedCloseSale(int playerId, StockType stock, int anchoredGain)
     {
@@ -130,7 +122,6 @@ public class StockMarketManager : MonoBehaviour
         return false;
     }
 
-    // End-of-round: pay anchored gains and tick market down per unit
     [Server]
     public void ProcessCloseSales()
     {
@@ -172,20 +163,16 @@ public class StockMarketManager : MonoBehaviour
         CheckCeiling(stock);
     }
 
-    // Reverts for Undo (guard with clamps)
     [Server]
     public void RevertBuy(int buyerPid, StockType stock)
     {
-        // If that buy had triggered a ceiling, fully roll it back
         if (_lastCeiling.TryGetValue(stock, out var rec) && rec.active)
         {
-            // 1) Take back money paid to players
             foreach (var kv in rec.payoutByPlayer)
             {
-                PlayerManager.Instance.RemoveMoney(kv.Key, kv.Value); // clamps to >= 0 in your PM
+                PlayerManager.Instance.RemoveMoney(kv.Key, kv.Value);
             }
 
-            // 2) Restore destroyed holdings
             foreach (var kv in rec.destroyedByPlayer)
             {
                 int restoreCount = kv.Value;
@@ -201,11 +188,9 @@ public class StockMarketManager : MonoBehaviour
                 }
             }
 
-            // 3) Restore exact pre-buy price (e.g., 7), not starting-1
             stockPrices[stock] = Mathf.Clamp(rec.preBuyPrice, minPrice, maxPrice);
             OnStockPriceChanged?.Invoke(stock, stockPrices[stock]);
 
-            // mark record consumed
             rec.active = false;
             _lastCeiling[stock] = rec;
 
@@ -214,7 +199,6 @@ public class StockMarketManager : MonoBehaviour
             return;
         }
 
-        // Normal undo when no ceiling was triggered
         stockPrices[stock] = Mathf.Clamp(stockPrices[stock] - 1, minPrice, maxPrice);
         OnStockPriceChanged?.Invoke(stock, stockPrices[stock]);
 
@@ -226,17 +210,14 @@ public class StockMarketManager : MonoBehaviour
     {
         if (_lastBankruptcy.TryGetValue(stock, out var rec) && rec.active)
         {
-            // Restore destroyed holdings to every player
             foreach (var kv in rec.destroyedByPlayer)
             {
                 PlayerManager.Instance.AddStock(kv.Key, stock, kv.Value);
             }
 
-            // Restore price to the *pre-sale* value (e.g., 1), not starting+1
             stockPrices[stock] = Mathf.Clamp(rec.preSalePrice, minPrice, maxPrice);
             OnStockPriceChanged?.Invoke(stock, stockPrices[stock]);
 
-            // Mark record as consumed
             rec.active = false;
             _lastBankruptcy[stock] = rec;
 
@@ -245,13 +226,11 @@ public class StockMarketManager : MonoBehaviour
         }
         else
         {
-            // Normal undo path (no bankruptcy was triggered)
             stockPrices[stock] = Mathf.Clamp(stockPrices[stock] + 1, minPrice, maxPrice);
             OnStockPriceChanged?.Invoke(stock, stockPrices[stock]);
         }
     }
 
-    // Batch check for end-of-round hooks
     [Server]
     public void CheckBankruptcyAndCeilingAll()
     {
@@ -262,14 +241,11 @@ public class StockMarketManager : MonoBehaviour
         }
     }
 
-    // If price hits zero, announce bankruptcy, destroy holdings, reset to starting
     [Server]
     private void CheckBankruptcy(StockType stock)
     {
         if (stockPrices[stock] <= minPrice)
         {
-
-            // Remove all holdings of this stock from all players
             foreach (var player in PlayerManager.Instance.players)
             {
                 if (player.stocks.TryGetValue(stock, out var count) && count > 0)
@@ -286,7 +262,6 @@ public class StockMarketManager : MonoBehaviour
         }
     }
 
-    // If price hits ceiling, pay startingPrice per card, destroy holdings, reset to starting
     [Server]
     private void CheckCeiling(StockType stock)
     {
@@ -314,7 +289,6 @@ public class StockMarketManager : MonoBehaviour
     {
         if (stockPrices[stock] > minPrice) return;
 
-        // Snapshot how many cards each player currently holds (after the sold card was removed)
         var destroyed = new Dictionary<int, int>();
         foreach (var pl in PlayerManager.Instance.players)
         {
@@ -322,7 +296,6 @@ public class StockMarketManager : MonoBehaviour
             if (cnt > 0) destroyed[pl.id] = cnt;
         }
 
-        // Store record so Undo can put everything back and restore the exact price
         _lastBankruptcy[stock] = new BankruptcyRecord
         {
             active = true,
@@ -330,13 +303,11 @@ public class StockMarketManager : MonoBehaviour
             destroyedByPlayer = destroyed
         };
 
-        // Destroy holdings
         foreach (var kv in destroyed)
         {
             PlayerManager.Instance.RemoveStock(kv.Key, stock, kv.Value);
         }
             
-        // Reset price
         stockPrices[stock] = startingPrice;
 
         TurnManager.Instance.Server_SyncAllPlayers();
@@ -349,7 +320,6 @@ public class StockMarketManager : MonoBehaviour
     {
         if (stockPrices[stock] < maxPrice) return;
 
-        // Snapshot holdings to destroy and payouts to grant
         var destroyed = new Dictionary<int, int>();
         var payouts = new Dictionary<int, int>();
         foreach (var pl in PlayerManager.Instance.players)
@@ -362,7 +332,6 @@ public class StockMarketManager : MonoBehaviour
             }
         }
 
-        // Record so Undo can restore both cards and money + restore price precisely
         _lastCeiling[stock] = new CeilingRecord
         {
             active = true,
@@ -371,7 +340,6 @@ public class StockMarketManager : MonoBehaviour
             payoutByPlayer = payouts
         };
 
-        // Execute ceiling effects now
         foreach (var kv in payouts)
         {
             PlayerManager.Instance.AddMoney(kv.Key, kv.Value);

@@ -79,7 +79,6 @@ public class BootstrapUI : MonoBehaviour
         if (detailsPanel != null) detailsPanel.SetActive(false);
         if (playerCountPanel != null) playerCountPanel.SetActive(false);
 
-        // Default player count: 4
         if (toggle4 != null) toggle4.isOn = true;
     }
 
@@ -112,7 +111,6 @@ public class BootstrapUI : MonoBehaviour
             : nameInput.text.Trim();
 
         nm.pendingPlayerName = playerName;
-        //ClientPlayerConfig.PlayerName = playerName;
 
         int selectedCount = GetSelectedPlayerCount();
         nm.SetRequiredPlayers(selectedCount);
@@ -141,9 +139,6 @@ public class BootstrapUI : MonoBehaviour
 
             if (clientButtonLabel != null) clientButtonLabel.text = "Join Game";
 
-            // Lokal test için istersen default "localhost" koyabilirsin:
-            // if (string.IsNullOrWhiteSpace(addressInput.text)) addressInput.text = "localhost";
-
             return;
         }
 
@@ -152,7 +147,6 @@ public class BootstrapUI : MonoBehaviour
             : nameInput.text.Trim();
 
         nm.pendingPlayerName = playerName;
-        //ClientPlayerConfig.PlayerName = playerName;
 
         if (!string.IsNullOrWhiteSpace(addressInput.text))
         {

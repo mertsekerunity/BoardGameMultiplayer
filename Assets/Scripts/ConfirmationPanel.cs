@@ -20,7 +20,6 @@ public class ConfirmationPanel : MonoBehaviour
 
         if (message) message.text = msg;
 
-        // Gate to local player only (so remote clients can't click)
         var cg = GetComponent<CanvasGroup>();
         if (cg)
         {

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Mirror;
 using UnityEngine;
-using static Unity.Collections.AllocatorManager;
+
 
 public class TurnManager : NetworkBehaviour
 {
@@ -22,7 +22,7 @@ public class TurnManager : NetworkBehaviour
     {
         public TurnActionType type;
         public StockType stock;
-        public bool openSale; // only for sells
+        public bool openSale;
         public int unitPrice;
     }
 
@@ -32,8 +32,8 @@ public class TurnManager : NetworkBehaviour
     private int _buyLimitThisTurn = DefaultBuyLimit;
     private int _sellLimitThisTurn = DefaultSellLimit;
 
-    private int _buyDeltaThisTurn = 0;   // Trader: -1
-    private int _sellDeltaThisTurn = 0;  // Trader: +1
+    private int _buyDeltaThisTurn = 0;
+    private int _sellDeltaThisTurn = 0;
 
     private Coroutine _mainPhaseCo;
     private bool _turnWaiting = false;
@@ -49,34 +49,28 @@ public class TurnManager : NetworkBehaviour
     private List<CharacterCardSO> _selectionOptions;
 
     private int _biddingCurrentPid = -1;
-    private readonly Dictionary<int, int> _playerBids = new(); // pid -> amount
+    private readonly Dictionary<int, int> _playerBids = new();
 
-    // Blocked character numbers this round
     private readonly HashSet<int> _blockedCharacters = new();
     private readonly HashSet<int> _stolenCharacters = new();
 
-    // Thief payouts to execute at end of the thief's turn
     private readonly List<(int thiefPid, int victimPid, int amount)> _pendingThief = new();
 
-    // Tax collections to execute at end of round: (collectorPid, stock)
     private readonly List<(int collectorPid, StockType stock)> _pendingTaxes = new();
 
-    // per-turn state
     private TurnActionType _turnAction = TurnActionType.None;
     private int _buyUsed = 0;
     private int _sellUsed = 0;
 
-    // Ability for this player’s turn
     private CharacterAbilityType _activeAbility;
     private bool _abilityAvailable = false;
 
     private readonly HashSet<StockType> _manipulatedStocksThisRound = new();
     private readonly List<PendingManipulation> _pendingManipulations = new();
 
-    private readonly Dictionary<int, List<ManipulationType>> _cachedManipOptions = new(); // for Manipulator (3 choices)
-    private readonly Dictionary<int, ManipulationType> _cachedSingleManip = new();        // for Lottery/Broker (1 choice)
+    private readonly Dictionary<int, List<ManipulationType>> _cachedManipOptions = new();
+    private readonly Dictionary<int, ManipulationType> _cachedSingleManip = new();
 
-    // first price per stock (bulk advantage anchors)
     private readonly Dictionary<StockType, int> _lockedBuyPrice = new();
     private readonly Dictionary<StockType, int> _lockedSellPrice = new();
 
@@ -90,7 +84,6 @@ public class TurnManager : NetworkBehaviour
 
     public int ActivePlayerId { get; private set; } = -1;
 
-    // Round state
     private List<CharacterCardSO> discardDeck;
     public List<CharacterCardSO> faceUpDiscards { get; private set; } = new List<CharacterCardSO>();
     public List<CharacterCardSO> faceDownDiscards { get; private set; } = new List<CharacterCardSO>();
@@ -100,18 +93,18 @@ public class TurnManager : NetworkBehaviour
 
     private readonly int[] _bidOptionAmounts = new int[]
     {
-        -1, // slot 0
-        -1, // slot 1
-         0, // slot 2
-         0, // slot 3
-         1, // slot 4
-         3, // slot 5
-         5, // slot 6
-         7, // slot 7
-        10  // slot 8
+        -1, 
+        -1, 
+         0, 
+         0, 
+         1, 
+         3, 
+         5, 
+         7, 
+        10  
     };
 
-    private readonly Dictionary<int, int> _bidTakenBySlot = new Dictionary<int, int>(); // (slotIndex -> pid)
+    private readonly Dictionary<int, int> _bidTakenBySlot = new Dictionary<int, int>();
 
     private float _biddingPanelCloseTimer = 2.5f;
     public List<int> biddingOrder { get; private set; }
@@ -161,15 +154,12 @@ public class TurnManager : NetworkBehaviour
             return;
         }
         Instance = this;
-        //DontDestroyOnLoad(transform.root.gameObject); //didnt work with mirror, still dont know why.
     }
 
     [Server]
     public void SetupTurnOrder()
     {
-        //Determine first-round random order or bidding order
-
-        selectionOrder = PlayerManager.Instance.players.Select(p => p.id).OrderBy(_ => UnityEngine.Random.value).ToList(); //LINQ 
+        selectionOrder = PlayerManager.Instance.players.Select(p => p.id).OrderBy(_ => UnityEngine.Random.value).ToList();
     }
 
     [Server]
@@ -178,16 +168,13 @@ public class TurnManager : NetworkBehaviour
         int playerCount = PlayerManager.Instance.players.Count;
         int discardCount = maxCharacters - (playerCount + 1);
 
-        // Determine face-up and face-down counts
-        int faceUpCount = (playerCount <= 4) ? 2 : 1; // ?: operator - the ternary conditional operator
+        int faceUpCount = (playerCount <= 4) ? 2 : 1;
         faceUpCount = Mathf.Clamp(faceUpCount, 1, discardCount);
         int faceDownCount = discardCount - faceUpCount;
 
-        // Prepare and shuffle deck
         discardDeck = new List<CharacterCardSO>(characterDeck);
         Shuffle(discardDeck);
 
-        // Assign discards
         faceUpDiscards = discardDeck.Take(faceUpCount).ToList();
         faceDownDiscards = discardDeck.Skip(faceUpCount).Take(faceDownCount).ToList();
         availableCharacters = discardDeck.Skip(discardCount).ToList();
@@ -205,7 +192,6 @@ public class TurnManager : NetworkBehaviour
         _playerBids.Clear();
         _bidTakenBySlot.Clear();
 
-        // tell all clients to reset their bidding UI
         RpcBiddingReset(PlayerManager.Instance.players.Count);
 
         if (_biddingPhaseCo != null)
@@ -224,39 +210,31 @@ public class TurnManager : NetworkBehaviour
             _biddingCurrentPid = pid;
             _biddingWaiting = true;
 
-            // everyone highlights / sees whose turn it is
             RpcSetBidActivePlayer(pid);
 
-            // find that player's NetPlayer on the *server*
             var p = PlayerManager.Instance.players.First(pp => pp.id == pid);
             var nm = NetworkManager.singleton as CustomNetworkManager;
             var netPlayer = nm?.GetPlayerByPid(pid);
 
             if (netPlayer != null)
             {
-                // only that client's UI becomes interactive
                 netPlayer.TargetBeginBidTurn(p.playerName, p.money);
             }
 
-            // Wait for that player to pick a circle (SubmitBid_Server sets _biddingWaiting=false)
             while (_biddingWaiting)
                 yield return null;
         }
 
-        // clear highlights on all clients
         RpcClearAllHighlights();
 
-        // Compute selection order
         selectionOrder = _playerBids
             .OrderByDescending(kv => kv.Value)
             .ThenBy(_ => UnityEngine.Random.value)
             .Select(kv => kv.Key)
             .ToList();
 
-        // wait before closing panel
         yield return new WaitForSeconds(_biddingPanelCloseTimer);
 
-        // hide panel on all clients
         RpcBiddingClose();
         RpcShowGlobalBanner("Bidding final order: " + string.Join(", ", selectionOrder.Select(id => $"P{id}")));
         BiddingFinished?.Invoke();
@@ -265,7 +243,6 @@ public class TurnManager : NetworkBehaviour
     [Server]
     public void StartCharacterSelectionPhase()
     {
-        // Don’t run two selection loops
         if (_selectionCo != null) StopCoroutine(_selectionCo);
         _selectionCo = StartCoroutine(SelectionPhaseLoop());
     }
@@ -314,19 +291,17 @@ public class TurnManager : NetworkBehaviour
 
         foreach (var card in selectedCards)
         {
-            // Start this player's turn
-            HandleCharacterTurn(card);   // sets ActivePlayerId, enables UI, etc.
+            HandleCharacterTurn(card);
 
             _turnWaiting = true;
             while (_turnWaiting)
             {
-                yield return null;       // one frame at a time
+                yield return null;
             }
         }
 
         ResolveEndOfRound();
 
-        // Main phase finished -> end round (or next phase)
         GameManager.Instance.EndRound();
     }
 
@@ -461,15 +436,13 @@ public class TurnManager : NetworkBehaviour
         int cardId = (int)card.characterNumber;
         RpcHideActiveCharacter(ActivePlayerId, cardId);
 
-        _history.Clear(); // can’t undo previous player’s actions
+        _history.Clear();
 
-        // Disable interactivity for this player on all clients
         RpcSetActivePlayer(ActivePlayerId, false);
         RpcClearAllHighlights();
 
         ActivePlayerId = -1;
 
-        // Release the coroutine to continue to the next character
         _turnWaiting = false;
     }
 
@@ -533,10 +506,9 @@ public class TurnManager : NetworkBehaviour
         if (!_lockedBuyPrice.TryGetValue(stock, out var anchor))
         {
             anchor = StockMarketManager.Instance.stockPrices[stock];
-            _lockedBuyPrice[stock] = anchor; // anchor first time you buy this stock this turn
+            _lockedBuyPrice[stock] = anchor;
         }
-        // <-- your line goes here
-        int payPrice = Mathf.Max(0, anchor + _buyDeltaThisTurn); // Trader: -1
+        int payPrice = Mathf.Max(0, anchor + _buyDeltaThisTurn);
         return payPrice;
     }
 
@@ -546,10 +518,9 @@ public class TurnManager : NetworkBehaviour
         if (!_lockedSellPrice.TryGetValue(stock, out var anchor))
         {
             anchor = StockMarketManager.Instance.stockPrices[stock];
-            _lockedSellPrice[stock] = anchor; // anchor first time you sell this stock this turn
+            _lockedSellPrice[stock] = anchor;
         }
-        // <-- your line goes here
-        int gainPrice = Mathf.Max(0, anchor + _sellDeltaThisTurn); // Trader: +1
+        int gainPrice = Mathf.Max(0, anchor + _sellDeltaThisTurn);
         return gainPrice;
     }
 
@@ -561,26 +532,20 @@ public class TurnManager : NetworkBehaviour
         var nm = NetworkManager.singleton as CustomNetworkManager;
         var np = nm?.GetPlayerByPid(ActivePlayerId);
 
-        // lock action type: only "buy" this turn
         if (_turnAction == TurnActionType.None) _turnAction = TurnActionType.Buy;
         if (_turnAction != TurnActionType.Buy) return false;
 
-        // per-turn limit
         if (_buyUsed >= _buyLimitThisTurn) return false;
 
-        // anchor the first time we buy THIS stock this turn
         int current = StockMarketManager.Instance.stockPrices[stock];
         if (!_lockedBuyPrice.ContainsKey(stock))
             _lockedBuyPrice[stock] = current;
 
-        // anchored pay price with Trader delta (e.g., -1)
         int payPrice = GetAnchoredBuyPrice(stock);
 
-        // must afford the anchored price (not the current)
         var p = PlayerManager.Instance.players.First(pp => pp.id == ActivePlayerId);
         if (p.money < payPrice) return false;
 
-        // Do the actual buy at CURRENT price; market will tick up
         bool ok = PlayerManager.Instance.TryBuyStock(ActivePlayerId, stock, payPrice);
         if (!ok) return false;
 
@@ -603,28 +568,22 @@ public class TurnManager : NetworkBehaviour
         var nm = NetworkManager.singleton as CustomNetworkManager;
         var np = nm?.GetPlayerByPid(ActivePlayerId);
 
-        // lock action type: only "sell" this turn
         if (_turnAction == TurnActionType.None) _turnAction = TurnActionType.Sell;
         if (_turnAction != TurnActionType.Sell) return false;
 
-        // per-turn limit
         if (_sellUsed >= _sellLimitThisTurn) return false;
 
-        // anchor the first time we sell THIS stock this turn
         int current = StockMarketManager.Instance.stockPrices[stock];
         if (!_lockedSellPrice.ContainsKey(stock))
             _lockedSellPrice[stock] = current;
 
-        // anchored gain with Trader delta (e.g., +1)
         int anchoredGain = GetAnchoredSellPrice(stock);
 
         if (openSale)
         {
-            // Immediate sale: execute now
             bool ok = PlayerManager.Instance.TrySellStock(ActivePlayerId, stock, openSale: true);
             if (!ok) return false;
 
-            // Player received 'current'; top up so net == anchored
             int topUp = anchoredGain - current;
             if (topUp > 0) PlayerManager.Instance.AddMoney(ActivePlayerId, topUp);
 
@@ -633,24 +592,19 @@ public class TurnManager : NetworkBehaviour
         }
         else
         {
-            // CLOSE SALE: verify availability considering existing pendings
             var p = PlayerManager.Instance.players.First(pp => pp.id == ActivePlayerId);
             int owned = p.stocks.TryGetValue(stock, out var cnt) ? cnt : 0;
             int pending = PlayerManager.Instance.GetPendingCloseCount(ActivePlayerId, stock);
             if ((owned - pending) <= 0) return false;
 
-            // Mark pending in PM (no card removal, no money now)
-            // IMPORTANT: PlayerManager.TrySellStock(..., false) should NOT queue to market or remove a card.
             bool ok = PlayerManager.Instance.TrySellStock(ActivePlayerId, stock, openSale: false);
 
             Server_SyncPlayerState(ActivePlayerId);
             if (!ok) return false;
 
-            // Queue market payout at the anchored price; price tick happens at end-of-round
             StockMarketManager.Instance.QueueCloseSale(ActivePlayerId, stock, anchoredGain, current);
         }
 
-        // History (store unitPrice only for close-sale so Undo can remove exact queued item)
         _history.Push(new TurnHistoryEntry
         {
             type = TurnActionType.Sell,
@@ -735,8 +689,12 @@ public class TurnManager : NetworkBehaviour
             return false;
 
         var ownerPidOpt = GetPidByCharacterNumber(targetCharacterNumber);
+
         if (ownerPidOpt == null)
+        {
+            RpcShowGlobalBanner($"#{targetCharacterNumber} is now blocked.");
             return false;
+        }
 
         if (ownerPidOpt.Value == actingPid)
             return false;
@@ -768,8 +726,11 @@ public class TurnManager : NetworkBehaviour
         }
 
         if (GetPidByCharacterNumber(targetCharacterNumber) is not int victimPid)
+        {
+            RpcShowGlobalBanner($"{p.playerName} will steal from #{targetCharacterNumber}.");
             return false;
-
+        }
+            
         if (victimPid == actingPid)
             return false;
 
@@ -779,7 +740,10 @@ public class TurnManager : NetworkBehaviour
         int stealAmount = (int)Mathf.Floor((float)victimMoney / 2f);
 
         if (stealAmount <= 0)
+        {
+            RpcShowGlobalBanner($"{p.playerName} will steal from #{targetCharacterNumber}.");
             return false;
+        }
 
         ScheduleThiefPayout(thiefPid: actingPid, victimPid: victimPid, amount: stealAmount);
 
@@ -817,7 +781,6 @@ public class TurnManager : NetworkBehaviour
 
         np.TargetToast($"You inherited 1 {stock}.");
 
-        // Ability consumed, no undo.
         PushAbilityBarrier();
         return true;
     }
@@ -926,7 +889,6 @@ public class TurnManager : NetworkBehaviour
             },
             onCancelled: () =>
             {
-                // ability still can be used.
             });
     }
 
@@ -985,12 +947,10 @@ public class TurnManager : NetworkBehaviour
             {
                 ScheduleTaxCollector(ActivePlayerId, stock);
 
-                // Ability consumed
                 PushAbilityBarrier(undo: null);
             },
             onCancelled: () =>
             {
-                // do nothing
             });
 
         return true;
@@ -1022,7 +982,7 @@ public class TurnManager : NetworkBehaviour
 
             if (!ok)
             {
-                np.TargetToast("Ability had no effect.");
+                PushAbilityBarrier();
                 return;
             }
 
@@ -1030,7 +990,6 @@ public class TurnManager : NetworkBehaviour
         },
         onCancelled: () =>
         {
-            // cancelled, ability still can be used.
         });
 
         return true;
@@ -1515,7 +1474,6 @@ public class TurnManager : NetworkBehaviour
             return false;
         }
 
-        // Helpers for anchored prices (with Trader deltas)
         int AnchoredBuy(StockType s)
         {
             int basePrice = _lockedBuyPrice.TryGetValue(s, out var anchor)
@@ -1649,7 +1607,7 @@ public class TurnManager : NetworkBehaviour
                 int cnt = PlayerManager.Instance.players[pid].stocks.TryGetValue(t.stock, out var c) ? c : 0;
                 if (cnt <= 0) continue;
 
-                int due = cnt * 1; // $1 per stock card
+                int due = cnt * 1;
                 int pay = Mathf.Min(due, PlayerManager.Instance.players[pid].money);
                 if (pay > 0)
                 {
@@ -1683,16 +1641,13 @@ public class TurnManager : NetworkBehaviour
     public void BuildTargetsForAbility(int actingPid, CharacterAbilityType ability,
                                    out HashSet<int> enabled, out HashSet<int> disabled)
     {
-        // Start with all numbers 1..9
         enabled = new HashSet<int>(Enumerable.Range(1, 9));
         disabled = new HashSet<int>();
 
-        // 1) Remove face-up discards ONLY (these are public knowledge and cannot be chosen)
         var faceUpNums = new HashSet<int>(faceUpDiscards.Select(so => (int)so.characterNumber));
         enabled.ExceptWith(faceUpNums);
         disabled.UnionWith(faceUpNums);
 
-        // 2) Remove self (you can’t target your own character number)
         var myNum = GetMyCharacterNumber(actingPid);
         if (myNum.HasValue)
         {
@@ -1700,21 +1655,16 @@ public class TurnManager : NetworkBehaviour
             disabled.Add(myNum.Value);
         }
 
-        // 3) Enforce “can’t be both blocked and stolen” (previous choices this round)
-        enabled.ExceptWith(_blockedCharacters);  // already blocked cannot be chosen again
-        enabled.ExceptWith(_stolenCharacters);   // already stolen cannot be chosen again
+        enabled.ExceptWith(_blockedCharacters);
+        enabled.ExceptWith(_stolenCharacters);
         disabled.UnionWith(_blockedCharacters);
         disabled.UnionWith(_stolenCharacters);
 
-        // 4) Thief-specific rule: cannot target Blocker #1
         if (ability == CharacterAbilityType.Thief)
         {
             enabled.Remove(1);
             disabled.Add(1);
         }
-
-        // NOTE: We do NOT remove numbers that are face-down discards or simply not in play.
-        // If a player picks a number with no owner, the ability just fizzles (intended mystery).
     }
 
     [Server]
@@ -1771,7 +1721,6 @@ public class TurnManager : NetworkBehaviour
     {
         if (_cachedManipOptions.TryGetValue(pid, out var list)) return list;
 
-        // Draw & reserve (do NOT discard/return yet)
         var a = DeckManager.Instance.DrawManipulation();
         var b = DeckManager.Instance.DrawManipulation();
         var c = DeckManager.Instance.DrawManipulation();
@@ -1799,7 +1748,7 @@ public class TurnManager : NetworkBehaviour
     {
         if (_cachedSingleManip.TryGetValue(pid, out var m)) return m;
 
-        m = DeckManager.Instance.DrawManipulation(); // reserve it
+        m = DeckManager.Instance.DrawManipulation();
         _cachedSingleManip[pid] = m;
         return m;
     }
@@ -1813,29 +1762,22 @@ public class TurnManager : NetworkBehaviour
     [Server]
     public void ResolveEndOfRound()
     {
-        // 1) Reveal & apply all queued manipulations (incl. Dividend payouts)
         ResolvePendingManipulationsEndOfRound();
 
-        // After manipulations, some stocks may hit 0 or 8
         StockMarketManager.Instance.CheckBankruptcyAndCeilingAll();
 
-        // Remove the sold cards from players' hands
         PlayerManager.Instance.CommitCloseSellsForEndOfRound();
 
-        // 2) Resolve all queued close sells (anchored payouts + market ticks)
-        // If your close-sell processing lives in StockMarketManager, call that:
         StockMarketManager.Instance.ProcessCloseSales();
 
-        // Check again after mass selling (could trigger 0/8 again)
         StockMarketManager.Instance.CheckBankruptcyAndCeilingAll();
 
-        // 3) End-of-round taxes (Tax Collector)
         ResolveTaxesEndOfRound();
 
         Server_SyncAllPlayers();
         Server_SyncAllStocks();
 
-        var nm = NetworkManager.singleton as CustomNetworkManager; //delete later
+        var nm = NetworkManager.singleton as CustomNetworkManager;
         foreach (var p in PlayerManager.Instance.players)
         {
             var np = nm?.GetPlayerByPid(p.id);
@@ -1894,7 +1836,7 @@ public class TurnManager : NetworkBehaviour
         {
             np.TargetToast("Not enough money for that bid.");
                 
-            return; //keep waiting
+            return;
         }
 
         _bidTakenBySlot[slotIndex] = pid;
@@ -2038,9 +1980,8 @@ public class TurnManager : NetworkBehaviour
     [Server]
     public void CleanupRound()
     {
-        // Reset round state for next round
         discardDeck = null;
-        faceUpDiscards?.Clear(); // ?. null conditional operator
+        faceUpDiscards?.Clear();
         faceDownDiscards?.Clear();
         availableCharacters?.Clear();
         biddingOrder?.Clear();
@@ -2049,7 +1990,7 @@ public class TurnManager : NetworkBehaviour
     }
 
     [Server]
-    private void Shuffle<T>(List<T> list) // Fisher–Yates shuffle
+    private void Shuffle<T>(List<T> list) //Fisher Yates
     {
         for (int i = 0; i < list.Count; i++)
         {

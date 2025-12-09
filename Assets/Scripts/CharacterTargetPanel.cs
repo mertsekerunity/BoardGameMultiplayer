@@ -8,9 +8,9 @@ using UnityEngine.UI;
 [Serializable]
 public class CharacterButton
 {
-    public int characterNumber;              // 1..9
+    public int characterNumber;              
     public Button button;
-    public TextMeshProUGUI label;            // optional: “1 – Blocker” etc.
+    public TextMeshProUGUI label;            
 }
 
 public class CharacterTargetPanel : MonoBehaviour

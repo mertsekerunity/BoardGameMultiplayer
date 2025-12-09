@@ -7,7 +7,6 @@ using TMPro;
 public class StockTargetPanel : MonoBehaviour
 {
     [SerializeField] private Button redBtn, blueBtn, greenBtn, yellowBtn;
-    //[SerializeField] private TextMeshProUGUI prompt;
     [SerializeField] private Button cancelBtn;
 
     private Action<StockType> _onChosen;
@@ -18,21 +17,6 @@ public class StockTargetPanel : MonoBehaviour
         gameObject.SetActive(true);
         _onChosen = onChosen;
         _onCancel = onCancelled;
-
-        //if (prompt != null)
-        //{
-        //    if (string.IsNullOrEmpty(promptText))
-        //        prompt.gameObject.SetActive(false);
-        //    else
-        //    {
-        //        prompt.text = promptText;
-        //        prompt.gameObject.SetActive(true);
-        //    }
-        //}
-
-        //prompt.gameObject.SetActive(true);
-        //if (prompt) prompt.text = promptText;
-        //if (prompt) prompt.text = $"{PlayerManager.Instance.players[actingPid].playerName}, choose a stock to manipulate";
 
         Setup(redBtn, StockType.Red, enabled.Contains(StockType.Red));
         Setup(blueBtn, StockType.Blue, enabled.Contains(StockType.Blue));

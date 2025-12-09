@@ -9,23 +9,18 @@ public class DeckManager : MonoBehaviour
 {
     public static DeckManager Instance { get; private set; }
 
-    // Manipulation deck
     private readonly Stack<ManipulationType> _manipDiscard = new();
 
-    // Tax deck
     private readonly Stack<TaxType> _taxDiscard = new();
 
-    // Runtime shuffled decks
     private List<ManipulationType> _manipRuntime;
     private List<TaxType> _taxRuntime;
 
-    // Lottery
     [SerializeField] int lotteryPool = 0;
     [SerializeField] int lotteryIncreaseAmount = 2;
 
     public int LotteryPool => lotteryPool;
 
-    // Events for UI or game logic
     public event Action<ManipulationType> OnManipulationCardDrawn;
     public event Action<TaxType> OnTaxCardDrawn;
     public event Action OnDecksReshuffled;
@@ -38,10 +33,8 @@ public class DeckManager : MonoBehaviour
             return;
         }
         Instance = this;
-        //DontDestroyOnLoad(transform.root.gameObject); //didnt work with mirror, still dont know why.
     }
 
-    // Call once at game start
     [Server]
     public void SetupDecks()
     {
@@ -56,8 +49,6 @@ public class DeckManager : MonoBehaviour
         OnDecksReshuffled?.Invoke();
     }
 
-
-    // Called at end of each round to return played cards and reshuffle
     [Server]
     public void CleanupRound()
     {
@@ -76,8 +67,6 @@ public class DeckManager : MonoBehaviour
         OnDecksReshuffled?.Invoke();
     }
 
-
-    // Draws the top manipulation card
     [Server]
     public ManipulationType DrawManipulationCard()
     {
@@ -91,7 +80,6 @@ public class DeckManager : MonoBehaviour
         return card;
     }
 
-    // Draws the top tax card
     [Server]
     public TaxType DrawTaxCard()
     {
@@ -125,7 +113,6 @@ public class DeckManager : MonoBehaviour
         lotteryPool += amount;
     }
 
-    // Random stock deck (infinite for now)
     [Server]
     public StockType DrawRandomStock()
     {
@@ -133,7 +120,6 @@ public class DeckManager : MonoBehaviour
         return pool[UnityEngine.Random.Range(0, pool.Count)];
     }
 
-    // Placeholder for returning a stock to the random pool.
     [Server]
     public void ReturnStockToRandom(StockType stock)
     {
@@ -143,7 +129,6 @@ public class DeckManager : MonoBehaviour
     private List<ManipulationType> BuildManipulationLibrary()
     {
         return new List<ManipulationType> {
-        // +1 x2, +2 x1, -1 x2, -2 x1, -3 x1, +4 x1, Dividend x2
         ManipulationType.Plus1, ManipulationType.Plus1,
         ManipulationType.Plus2,
         ManipulationType.Minus1, ManipulationType.Minus1,
@@ -175,8 +160,6 @@ public class DeckManager : MonoBehaviour
     [Server]
     public void ReturnTaxToDeck(TaxType t) { _taxRuntime.Add(t); }
 
-
-    // Generic in-place Fisher–Yates shuffle
     private void Shuffle<T>(List<T> list) // Fisher–Yates shuffle
     {
         for (int i = 0; i < list.Count; i++)

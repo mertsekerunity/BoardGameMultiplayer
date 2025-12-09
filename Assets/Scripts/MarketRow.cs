@@ -21,12 +21,8 @@ public class MarketRow : MonoBehaviour
         {
             iconImage.sprite = icon;
         }
-        else
-        {
-            Debug.Log("icon image is null !!!");
-        }
 
-            priceText.text = "0$";
+        priceText.text = "0$";
 
         buyButton.onClick.RemoveAllListeners();
         buyButton.onClick.AddListener(() => onBuy(type));

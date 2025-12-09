@@ -19,17 +19,13 @@ public class CharacterSelectionItem : MonoBehaviour
 
         button.onClick.AddListener(() =>
         {
-            Debug.Log($"[SELECT] Click: #{(int)_card.characterNumber} {_card.characterName}");
             onClick?.Invoke();
         });
-
-        //button.onClick.AddListener(() => onClick?.Invoke());
     }
 
     public void SetInteractable(bool on)
     {
         button.interactable = on;
-        // optional: dim when disabled
         var cg = GetComponent<CanvasGroup>();
         if (cg) cg.alpha = on ? 1f : 0f;
     }

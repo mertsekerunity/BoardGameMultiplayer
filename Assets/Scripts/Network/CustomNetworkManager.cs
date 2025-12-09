@@ -45,7 +45,6 @@ public class CustomNetworkManager : NetworkManager
 
     public override void OnServerAddPlayer(NetworkConnectionToClient conn)
     {
-        // Spawn the player prefab (base does this) and grab our NetPlayer
         base.OnServerAddPlayer(conn);
 
         var np = conn.identity.GetComponent<NetPlayer>();
@@ -53,8 +52,6 @@ public class CustomNetworkManager : NetworkManager
         connToPlayer[conn] = np;
 
         PlayerManager.Instance.RegisterNetworkPlayer(np.pid);
-
-        Debug.Log($"[NET] Player joined. pid={np.pid}");
 
         if (GameManager.Instance != null)
         {
@@ -66,9 +63,7 @@ public class CustomNetworkManager : NetworkManager
     {
         if (connToPlayer.TryGetValue(conn, out var np))
         {
-            Debug.Log($"[NET] Player pid={np.pid} disconnected.");
             connToPlayer.Remove(conn);
-            // TODO later: if it’s the active player, safely advance turn or pause
         }
 
         base.OnServerDisconnect(conn);

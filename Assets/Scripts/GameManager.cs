@@ -2,10 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using Mirror;
-using TMPro;
-using Unity.VisualScripting;
-using UnityEngine;
-using UnityEngine.Rendering.Universal.Internal;
+
 
 public class GameManager : NetworkBehaviour
 {
@@ -25,7 +22,6 @@ public class GameManager : NetworkBehaviour
             return;
         }
         Instance = this;
-        //DontDestroyOnLoad(transform.root.gameObject); //didnt work with mirror, still dont know why.
     }
 
     [Server]
@@ -52,7 +48,6 @@ public class GameManager : NetworkBehaviour
     {
         int playerCount = requiredPlayers;
 
-        // Set up core systems
         StockMarketManager.Instance.SetupMarket(playerCount);
         PlayerManager.Instance.Server_GiveInitialStocks(3);
         DeckManager.Instance.SetupDecks();
@@ -154,11 +149,9 @@ public class GameManager : NetworkBehaviour
     [Server]
     public void EndRound()
     {
-        // Cleanup round-specific data
         TurnManager.Instance.CleanupRound();
         DeckManager.Instance.CleanupRound();
 
-        // Advance round counter and begin the next round
         currentRound++;
 
         if(currentRound <= maxRound)
@@ -198,7 +191,6 @@ public class GameManager : NetworkBehaviour
             }
         }
 
-        // Tie-breaker: lower total bid spend wins? (Or whatever your logic is)
         if (tied.Count > 0)
         {
             foreach (var p in tied)
