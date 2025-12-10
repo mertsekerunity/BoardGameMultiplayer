@@ -14,9 +14,14 @@ public class NetPlayer : NetworkBehaviour
     {
         base.OnStartLocalPlayer();
 
-        string desiredName = CustomNetworkManager.Instance.pendingPlayerName;
+        var nm = CustomNetworkManager.Instance;
 
-        CmdSetPlayerName(desiredName);
+        if(nm != null)
+        {
+            string desired = string.IsNullOrWhiteSpace(nm.pendingPlayerName) ? $"Player {pid + 1}" : nm.pendingPlayerName.Trim();
+
+            CmdSetPlayerName(desired);
+        }
     }
 
     void OnPidChanged(int oldValue, int newValue)
@@ -30,9 +35,7 @@ public class NetPlayer : NetworkBehaviour
     [Command]
     private void CmdSetPlayerName(string rawName)
     {
-        string finalName = string.IsNullOrWhiteSpace(rawName)
-            ? $"Player {pid + 1}"
-            : rawName.Trim();
+        string finalName = string.IsNullOrWhiteSpace(rawName) ? $"Player {pid + 1}" : rawName.Trim();
 
         PlayerManager.Instance.SetPlayerName(pid, finalName);
 

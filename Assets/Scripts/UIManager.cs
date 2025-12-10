@@ -144,6 +144,15 @@ public class UIManager : MonoBehaviour
         }
         _playerPanels.Clear();
 
+        if (_playerNames == null)
+        {
+            _playerNames = new Dictionary<int, string>();
+        }
+        else
+        {
+            _playerNames.Clear();
+        }
+
         if (playerCount < 5)
         {
             playersPanelContainer.GetComponent<GridLayoutGroup>().constraintCount = 2;
@@ -479,17 +488,13 @@ public class UIManager : MonoBehaviour
 
     public void SetBidActivePlayer(int playerId)
     {
-        string pName;
 
         foreach (var kv in _playerPanels)
         {
             kv.Value.SetActiveHighlight(kv.Key == playerId);
         }
 
-        if (!_playerNames.TryGetValue(playerId, out pName) || string.IsNullOrEmpty(pName))
-        {
-            pName = $"Player {playerId + 1}";
-        }
+        string pName = GetPlayerNameById(playerId);
 
         ShowLocalToast($"{pName}, make a bid");
     }
@@ -713,12 +718,28 @@ public class UIManager : MonoBehaviour
         _hasPendingSelection = true;
     }
 
-    private string GetPlayerNameById(int pid)
+    public string GetPlayerNameById(int pid)
     {
-        int idx = Array.IndexOf(_cachedIds,pid);
-        return _cachedNames[idx];
-    }
+        if (_playerNames != null && _playerNames.TryGetValue(pid, out var nameFromDict) && !string.IsNullOrEmpty(nameFromDict))
+        {
+            return nameFromDict;
+        }
 
+        if (_cachedIds != null && _cachedNames != null)
+        {
+            int idx = System.Array.IndexOf(_cachedIds, pid);
+            if (idx >= 0 && idx < _cachedNames.Length)
+            {
+                var nameFromCache = _cachedNames[idx];
+                if (!string.IsNullOrEmpty(nameFromCache))
+                {
+                    return nameFromCache;
+                }
+            }
+        }
+
+        return $"Player {pid + 1}";
+    }
 
     public void HideAllUndoButtons()
     {
@@ -841,6 +862,22 @@ public class UIManager : MonoBehaviour
         if (_playerPanels != null && _playerPanels.TryGetValue(pid, out var panel))
         {
             panel.SetPlayerName(newName);
+        }
+
+        if (_playerNames == null)
+        {
+            _playerNames = new Dictionary<int, string>();
+        }
+            
+        _playerNames[pid] = newName;
+
+        if (_cachedIds != null && _cachedNames != null)
+        {
+            int idx = System.Array.IndexOf(_cachedIds, pid);
+            if (idx >= 0 && idx < _cachedNames.Length)
+            {
+                _cachedNames[idx] = newName;
+            }
         }
     }
 

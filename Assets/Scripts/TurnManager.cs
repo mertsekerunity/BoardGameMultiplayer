@@ -557,6 +557,11 @@ public class TurnManager : NetworkBehaviour
 
         np?.TargetSetUndoInteractable(true);
 
+        string buyerName = UIManager.Instance.GetPlayerNameById(ActivePlayerId);
+        int newPrice = StockMarketManager.Instance.GetPrice(stock);
+
+        RpcShowGlobalBanner($"{buyerName} bought {payPrice-newPrice} {stock} for {(payPrice - newPrice) * payPrice}$ (now {newPrice}$).");
+
         return true;
     }
 
@@ -616,6 +621,14 @@ public class TurnManager : NetworkBehaviour
         _sellUsed++;
 
         np?.TargetSetUndoInteractable(true);
+
+        if (openSale)
+        {
+            string sellerName = UIManager.Instance.GetPlayerNameById(ActivePlayerId);
+            int newPrice = StockMarketManager.Instance.GetPrice(stock);
+
+            RpcShowGlobalBanner($"{sellerName} sold {anchoredGain-newPrice} {stock} for {(anchoredGain - newPrice) * anchoredGain}$ (now {newPrice}$).");
+        }
 
         return true;
     }

@@ -37,12 +37,18 @@ public class PlayerManager : MonoBehaviour
     {
         var existing = players.FirstOrDefault(p => p.id == pid);
         if (existing != null)
+        {
+            if (!string.IsNullOrEmpty(name))
+            {
+                existing.playerName = name.Trim();
+            }
             return existing;
+        }
 
         var p = new Player
         {
             id = pid,
-            playerName = name ?? $"Player {pid + 1}",
+            playerName = string.IsNullOrWhiteSpace(name) ? $"Player {pid + 1}" : name.Trim(),
             money = 5,
             stocks = new Dictionary<StockType, int>()
         };
