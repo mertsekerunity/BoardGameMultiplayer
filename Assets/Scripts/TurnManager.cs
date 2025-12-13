@@ -560,7 +560,7 @@ public class TurnManager : NetworkBehaviour
         string buyerName = UIManager.Instance.GetPlayerNameById(ActivePlayerId);
         int newPrice = StockMarketManager.Instance.GetPrice(stock);
 
-        RpcShowGlobalBanner($"{buyerName} bought {payPrice-newPrice} {stock} for {(payPrice - newPrice) * payPrice}$ (now {newPrice}$).");
+        RpcShowGlobalBanner($"{buyerName} bought 1 {stock} for {payPrice}$ (now {newPrice}$).");
 
         return true;
     }
@@ -627,7 +627,7 @@ public class TurnManager : NetworkBehaviour
             string sellerName = UIManager.Instance.GetPlayerNameById(ActivePlayerId);
             int newPrice = StockMarketManager.Instance.GetPrice(stock);
 
-            RpcShowGlobalBanner($"{sellerName} sold {anchoredGain-newPrice} {stock} for {(anchoredGain - newPrice) * anchoredGain}$ (now {newPrice}$).");
+            RpcShowGlobalBanner($"{sellerName} sold 1 {stock} for {anchoredGain}$ (now {newPrice}$).");
         }
 
         return true;
