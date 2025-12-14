@@ -16,6 +16,8 @@ public class UIManager : MonoBehaviour
     [SerializeField] private Transform marketPanelContainer;
     [SerializeField] private MarketRow marketRowPrefab;
 
+    [SerializeField] private TextMeshProUGUI roundstringText;
+    [SerializeField] private TextMeshProUGUI lotterystringText;
     [SerializeField] private TextMeshProUGUI roundText;
     [SerializeField] private TextMeshProUGUI lotteryText;
     [SerializeField] private TextMeshProUGUI winnerText;
@@ -34,11 +36,16 @@ public class UIManager : MonoBehaviour
 
     [SerializeField] private TextMeshProUGUI privateManipPeek;
 
+    [Header("Core Panels")]
+    [SerializeField] private GameObject waitingPanel;
+    [SerializeField] private TextMeshProUGUI waitingText;
+
     [Header("Prompts")]
     [SerializeField] private TextMeshProUGUI globalPrompt;
     [SerializeField] private TextMeshProUGUI localPrompt;
 
     [Header("Face-Up Discards")]
+    [SerializeField] private TextMeshProUGUI discardText;
     [SerializeField] private TextMeshProUGUI discard1;
     [SerializeField] private TextMeshProUGUI discard2;
 
@@ -108,6 +115,11 @@ public class UIManager : MonoBehaviour
 
     void Start()
     {
+        if(waitingPanel != null)
+        {
+            waitingPanel.SetActive(false);
+        }
+
         SetUndoButtonVisible(false);
         SetUndoButtonInteractable(false);
 
@@ -120,6 +132,29 @@ public class UIManager : MonoBehaviour
         {
             StockMarketManager.Instance.OnStockPriceChanged -= HandlePriceChanged;
         }
+    }
+
+    public void ShowWaitingForPlayers(int connected, int required)
+    {
+        if (waitingPanel != null)
+            waitingPanel.SetActive(true);
+
+        roundstringText.gameObject.SetActive(false);
+        lotterystringText.gameObject.SetActive(false);
+        discardText.gameObject.SetActive(false);
+
+        if (waitingText != null)
+            waitingText.text = $"Waiting for players... ({connected}/{required})";
+    }
+
+    public void HideWaitingForPlayers()
+    {
+        if (waitingPanel != null)
+            waitingPanel.SetActive(false);
+
+        roundstringText.gameObject.SetActive(true);
+        lotterystringText.gameObject.SetActive(true);
+        discardText.gameObject.SetActive(true);
     }
 
     private static string TagFor(ManipulationType m) => m switch

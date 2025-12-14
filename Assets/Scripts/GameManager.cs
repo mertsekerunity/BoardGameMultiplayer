@@ -37,9 +37,11 @@ public class GameManager : NetworkBehaviour
 
         if (connectedPlayers < requiredPlayers)
         {
+            RpcUpdateWaitingStatus(connectedPlayers, requiredPlayers);
             return;
         }
 
+        RpcHideWaitingPanel();
         InitializeGame();
     }
 
@@ -306,4 +308,23 @@ public class GameManager : NetworkBehaviour
 
         UIManager.Instance.SyncEndGame(pid, money, stocks);
     }
+
+    [ClientRpc]
+    private void RpcUpdateWaitingStatus(int connected, int required)
+    {
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.ShowWaitingForPlayers(connected, required);
+        }
+    }
+
+    [ClientRpc]
+    private void RpcHideWaitingPanel()
+    {
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.HideWaitingForPlayers();
+        }
+    }
+
 }
